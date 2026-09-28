@@ -1,23 +1,26 @@
 # Portal de Reservas Acadêmicas — Núcleo
 
-Versão inicial real: login de verdade (Supabase Auth), ambientes e reservas
-compartilhados entre todos que acessam o site.
+Versão real: login de verdade (Supabase Auth), ambientes e reservas compartilhados.
 
-## O que ainda NÃO tem nesta versão (vem depois)
+## Segurança (esta versão)
 
-- Recorrência de reserva, múltiplas salas, professor associado
-- Prioridade entre tipos de reserva e aprovação pendente
-- Dias da semana habilitados, períodos/disciplinas
+- Cadastro livre desligado: só entra quem o admin convidou por e-mail.
+- O convite é enviado pela função `api/convidar.js` (roda no servidor do Vercel),
+  que confere no banco se quem chamou é admin. A chave secreta fica só no Vercel.
+- O cargo de cada pessoa é definido só pelo admin (no convite ou na aba "Usuários").
+- O convidado escolhe a própria senha ao abrir o link do e-mail.
+
+## O que ainda NÃO tem (vem depois)
+
+- Layout do protótipo (agenda em grade, abas, modais)
+- Bloqueio de colisão, limites de duração e antecedência, prioridades e aprovação pendente
+- Recorrência, múltiplas salas, professor associado, períodos/disciplinas, dias habilitados
 - Privacidade de material e de "Grupo de Estudos"
-- Convite de usuário pelo próprio admin (por enquanto, qualquer um cria conta e
-  escolhe o próprio cargo — ajustamos isso assim que o núcleo estiver no ar)
 
-## Deploy
+## Variáveis de ambiente (Vercel > Settings > Environment Variables)
 
-1. Suba esta pasta inteira num repositório do GitHub.
-2. Importe o repositório no Vercel.
-3. Nas configurações do projeto no Vercel, em "Environment Variables", adicione:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-   (veja os valores em `.env.example` — use os valores reais do seu projeto Supabase)
-4. Clique em Deploy.
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (secreta — só no Vercel)
+
+Depois de mudar variáveis, faça um novo deploy (Deployments > Redeploy).
