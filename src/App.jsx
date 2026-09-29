@@ -33,6 +33,21 @@ function Campo({ label, children }) {
   );
 }
 
+// Procura uma reserva que se sobreponha ao horário pedido (mesma data).
+// Horários "HH:MM" comparam certo como texto. Reservas seguidas (fim = início) não colidem.
+export function acharConflito(reservas, data, horaInicio, horaFim) {
+  return (
+    reservas.find(
+      (r) => r.data === data && r.hora_inicio.slice(0, 5) < horaFim && horaInicio < r.hora_fim.slice(0, 5),
+    ) || null
+  );
+}
+
+function dataBR(iso) {
+  const [a, m, d] = iso.split("-");
+  return `${d}/${m}/${a}`;
+}
+
 // ---------------------------------------------------------------- Login
 function TelaAutenticacao({ avisoInicial }) {
   const [modo, setModo] = useState("entrar"); // "entrar" | "esqueci"
@@ -269,6 +284,7 @@ function TelaPrincipal({ session, perfil }) {
   const [reservas, setReservas] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [mensagem, setMensagem] = useState("");
+  const [aviso, setAviso] = useState("");
 
   const [novaReserva, setNovaReserva] = useState({ tipo: "grupo_estudos", finalidade: "", data: "", horaInicio: "", horaFim: "", qtdPessoas: 1 });
   const [novoAmbiente, setNovoAmbiente] = useState({ nome: "", tipo: "laboratorio", capacidade: 10, antecedenciaHoras: 48 });
@@ -309,6 +325,22 @@ function TelaPrincipal({ session, perfil }) {
   async function criarReserva(e) {
     e.preventDefault();
     setMensagem("");
+    setAviso("");
+
+    if (novaReserva.horaFim <= novaReserva.horaInicio) {
+      setMensagem("O horário final precisa ser depois do inicial.");
+      return;
+    }
+
+    // Checagem rápida com o que já está na tela (o banco é quem garante de verdade, logo abaixo)
+    const conflito = acharConflito(reservas, novaReserva.data, novaReserva.horaInicio, novaReserva.horaFim);
+    if (conflito) {
+      setMensagem(
+        `Esse horário já está ocupado em ${ambiente?.nome || "este ambiente"}: ${dataBR(conflito.data)}, das ${conflito.hora_inicio.slice(0, 5)} às ${conflito.hora_fim.slice(0, 5)} (${conflito.finalidade}). Escolha outro horário.`,
+      );
+      return;
+    }
+
     const { error } = await supabase.from("reservas").insert({
       ambiente_id: ambienteSelecionado,
       usuario_id: session.user.id,
@@ -320,15 +352,24 @@ function TelaPrincipal({ session, perfil }) {
       qtd_pessoas: novaReserva.qtdPessoas || null,
     });
     if (error) {
-      setMensagem(error.message);
+      if (error.code === "23P01") {
+        // Alguém reservou esse horário no meio tempo: atualiza a lista e avisa
+        setMensagem("Esse horário acabou de ser reservado por outra pessoa. Veja a lista atualizada e escolha outro horário.");
+        carregarReservas(ambienteSelecionado);
+      } else if (error.code === "23514") {
+        setMensagem("O horário final precisa ser depois do inicial.");
+      } else {
+        setMensagem(error.message);
+      }
     } else {
-      setMensagem("Reserva criada.");
+      setAviso("Reserva criada.");
       setNovaReserva({ tipo: "grupo_estudos", finalidade: "", data: "", horaInicio: "", horaFim: "", qtdPessoas: 1 });
       carregarReservas(ambienteSelecionado);
     }
   }
 
   async function cancelarReserva(id) {
+    setAviso("");
     const { error } = await supabase.from("reservas").delete().eq("id", id);
     if (error) setMensagem(error.message);
     else carregarReservas(ambienteSelecionado);
@@ -386,6 +427,7 @@ function TelaPrincipal({ session, perfil }) {
       ) : (
         <>
           {mensagem && <p style={{ fontSize: 13, color: "#B23A48", marginBottom: 16 }}>{mensagem}</p>}
+          {aviso && <p style={{ fontSize: 13, color: "#2F6F6B", marginBottom: 16 }}>{aviso}</p>}
 
           <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 24 }}>
             <div>
