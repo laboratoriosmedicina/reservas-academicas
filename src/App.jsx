@@ -43,6 +43,34 @@ export function acharConflito(reservas, data, horaInicio, horaFim) {
   );
 }
 
+function validarLimites({ cargo, tipo, antecedenciaHoras, data, horaInicio, horaFim, agora = new Date() }) {
+  if (horaFim <= horaInicio) return { erro: "O horário final precisa ser depois do inicial." };
+
+  if (cargo === "aluno" || cargo === "monitor") {
+    const limiteMin = tipo === "laboratorio" ? 120 : 180;
+    const duracaoMin = toMinutosHHMM(horaFim) - toMinutosHHMM(horaInicio);
+    if (duracaoMin > limiteMin) {
+      return { erro: `Alunos podem reservar ${tipo === "laboratorio" ? "laboratório" : "sala de tutoria"} por, no máximo, ${limiteMin / 60}h.` };
+    }
+  }
+
+  if (cargo !== "admin" && antecedenciaHoras > 0) {
+    const inicio = new Date(`${data}T${horaInicio}:00`);
+    const minutosAte = (inicio.getTime() - agora.getTime()) / 60000;
+    if (minutosAte < antecedenciaHoras * 60) {
+      const label = tipo === "laboratorio" ? "Laboratório" : "Sala de tutoria";
+      const texto = antecedenciaHoras < 1 ? `${Math.round(antecedenciaHoras * 60)} min` : `${antecedenciaHoras}h`;
+      return { erro: `${label} exige pelo menos ${texto} de antecedência.` };
+    }
+  }
+  return { erro: null };
+}
+
+function toMinutosHHMM(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
 function dataBR(iso) {
   const [a, m, d] = iso.split("-");
   return `${d}/${m}/${a}`;
@@ -327,8 +355,16 @@ function TelaPrincipal({ session, perfil }) {
     setMensagem("");
     setAviso("");
 
-    if (novaReserva.horaFim <= novaReserva.horaInicio) {
-      setMensagem("O horário final precisa ser depois do inicial.");
+    const limite = validarLimites({
+      cargo: perfil?.cargo,
+      tipo: ambiente?.tipo,
+      antecedenciaHoras: Number(ambiente?.antecedencia_horas) || 0,
+      data: novaReserva.data,
+      horaInicio: novaReserva.horaInicio,
+      horaFim: novaReserva.horaFim,
+    });
+    if (limite.erro) {
+      setMensagem(limite.erro);
       return;
     }
 
