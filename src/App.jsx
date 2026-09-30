@@ -1,20 +1,42 @@
 import React, { useEffect, useState } from "react";
 import { supabase, HASH_INICIAL } from "./supabaseClient";
 
+// ---------------------------------------------------------------- Identidade visual
+const COLORS = {
+  ink: "#1B2430",
+  inkSoft: "#5B6470",
+  bg: "#EFF1EA",
+  panel: "#FFFFFF",
+  line: "#D6DAD2",
+  teal: "#2F6F6B",
+  tealSoft: "#E4EFEE",
+  professor: "#8A5A20",
+  professorSoft: "#FBF1DC",
+  monitor: "#6B4FA0",
+  monitorSoft: "#EEE8F7",
+  danger: "#B23A48",
+  dangerSoft: "#F7E4E0",
+};
+
 const CARGO_LABEL = { aluno: "Aluno", monitor: "Aluno monitor", professor: "Professor", admin: "Administração" };
 const TIPO_AMBIENTE_LABEL = { laboratorio: "Laboratório", sala_tutoria: "Sala de tutoria" };
+const TIPO_AMBIENTE_LABEL_PLURAL = { laboratorio: "Laboratórios", sala_tutoria: "Salas de tutoria" };
+const TIPO_LABEL = { grupo_estudos: "Grupo de estudos", monitoria: "Monitoria", professor: "Professor" };
+const TIPO_COLOR = { grupo_estudos: COLORS.teal, monitoria: COLORS.monitor, professor: COLORS.professor };
+const TIPO_SOFT = { grupo_estudos: COLORS.tealSoft, monitoria: COLORS.monitorSoft, professor: COLORS.professorSoft };
 
 const inputStyle = {
   width: "100%",
   padding: "9px 10px",
-  border: "1px solid #D6DAD2",
+  border: `1px solid ${COLORS.line}`,
   borderRadius: 4,
-  fontSize: 14,
+  fontSize: 13.5,
   boxSizing: "border-box",
+  background: "#fff",
 };
 
 const buttonStyle = {
-  background: "#1B2430",
+  background: COLORS.ink,
   color: "#fff",
   border: "none",
   borderRadius: 4,
@@ -24,12 +46,29 @@ const buttonStyle = {
   cursor: "pointer",
 };
 
-function Campo({ label, children }) {
+const fonteTitulo = { fontFamily: "'Poppins', sans-serif" };
+
+function Campo({ label, hint, children, style }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12, fontSize: 13, color: "#333" }}>
+    <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12, fontSize: 13, color: "#333", ...style }}>
       {label}
       {children}
+      {hint && <span style={{ fontSize: 11, color: COLORS.inkSoft, fontWeight: 400 }}>{hint}</span>}
     </label>
+  );
+}
+
+// Modal genérico: overlay + painel branco
+function Modal({ largura = 460, onFechar, children }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(26,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 50 }} onClick={onFechar}>
+      <div
+        style={{ background: "#fff", width: largura, maxWidth: "100%", padding: "24px 24px 20px", maxHeight: "88vh", overflowY: "auto", borderRadius: 4 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -76,6 +115,11 @@ function dataBR(iso) {
   return `${d}/${m}/${a}`;
 }
 
+function hojeISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // ---------------------------------------------------------------- Login
 function TelaAutenticacao({ avisoInicial }) {
   const [modo, setModo] = useState("entrar"); // "entrar" | "esqueci"
@@ -103,44 +147,46 @@ function TelaAutenticacao({ avisoInicial }) {
   }
 
   return (
-    <div style={{ maxWidth: 380, margin: "60px auto", padding: 24, border: "1px solid #D6DAD2", borderRadius: 8, fontFamily: "sans-serif" }}>
-      <h1 style={{ fontSize: 20, marginBottom: 4 }}>Portal de Reservas Acadêmicas</h1>
-      <p style={{ fontSize: 12, color: "#666", marginBottom: 20 }}>
-        {modo === "entrar" ? "Entre com o e-mail e a senha que você definiu pelo convite." : "Informe seu e-mail para receber um link de definição de senha."}
-      </p>
+    <div style={{ minHeight: "100vh", background: COLORS.ink, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
+      <div style={{ maxWidth: 380, width: "100%", margin: 20, padding: "32px 28px", background: "#fff", borderRadius: 6 }}>
+        <h1 style={{ ...fonteTitulo, fontSize: 19, marginBottom: 4, color: COLORS.ink }}>Portal de Reservas Acadêmicas</h1>
+        <p style={{ fontSize: 12, color: COLORS.inkSoft, marginBottom: 20 }}>
+          {modo === "entrar" ? "Entre com o e-mail e a senha que você definiu pelo convite." : "Informe seu e-mail para receber um link de definição de senha."}
+        </p>
 
-      <form onSubmit={modo === "entrar" ? entrar : enviarLinkDeSenha}>
-        <Campo label="E-mail">
-          <input type="email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </Campo>
-        {modo === "entrar" && (
-          <Campo label="Senha">
-            <input type="password" style={inputStyle} value={senha} onChange={(e) => setSenha(e.target.value)} required />
+        <form onSubmit={modo === "entrar" ? entrar : enviarLinkDeSenha}>
+          <Campo label="E-mail">
+            <input type="email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} required />
           </Campo>
-        )}
+          {modo === "entrar" && (
+            <Campo label="Senha">
+              <input type="password" style={inputStyle} value={senha} onChange={(e) => setSenha(e.target.value)} required />
+            </Campo>
+          )}
 
-        {mensagem && <p style={{ fontSize: 13, color: "#B23A48", marginBottom: 12 }}>{mensagem}</p>}
+          {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 12 }}>{mensagem}</p>}
 
-        <button type="submit" disabled={carregando} style={{ ...buttonStyle, width: "100%" }}>
-          {carregando ? "Aguarde…" : modo === "entrar" ? "Entrar" : "Enviar link"}
-        </button>
-      </form>
-
-      <p style={{ fontSize: 12, color: "#666", marginTop: 16, textAlign: "center" }}>
-        {modo === "entrar" ? (
-          <>
-            <button onClick={() => { setModo("esqueci"); setMensagem(""); }} style={{ background: "none", border: "none", color: "#1B2430", textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>
-              Esqueci minha senha / convite expirou
-            </button>
-            <br />
-            Não tem acesso? Peça um convite à administração.
-          </>
-        ) : (
-          <button onClick={() => { setModo("entrar"); setMensagem(""); }} style={{ background: "none", border: "none", color: "#1B2430", textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>
-            Voltar para o login
+          <button type="submit" disabled={carregando} style={{ ...buttonStyle, width: "100%" }}>
+            {carregando ? "Aguarde…" : modo === "entrar" ? "Entrar" : "Enviar link"}
           </button>
-        )}
-      </p>
+        </form>
+
+        <p style={{ fontSize: 12, color: COLORS.inkSoft, marginTop: 16, textAlign: "center" }}>
+          {modo === "entrar" ? (
+            <>
+              <button onClick={() => { setModo("esqueci"); setMensagem(""); }} style={{ background: "none", border: "none", color: COLORS.ink, textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>
+                Esqueci minha senha / convite expirou
+              </button>
+              <br />
+              Não tem acesso? Peça um convite à administração.
+            </>
+          ) : (
+            <button onClick={() => { setModo("entrar"); setMensagem(""); }} style={{ background: "none", border: "none", color: COLORS.ink, textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>
+              Voltar para o login
+            </button>
+          )}
+        </p>
+      </div>
     </div>
   );
 }
@@ -175,21 +221,23 @@ function TelaDefinirSenha({ onConcluido }) {
   }
 
   return (
-    <div style={{ maxWidth: 380, margin: "60px auto", padding: 24, border: "1px solid #D6DAD2", borderRadius: 8, fontFamily: "sans-serif" }}>
-      <h1 style={{ fontSize: 20, marginBottom: 4 }}>Defina sua senha</h1>
-      <p style={{ fontSize: 12, color: "#666", marginBottom: 20 }}>Escolha a senha que você vai usar para entrar no portal.</p>
-      <form onSubmit={salvar}>
-        <Campo label="Nova senha (mínimo 8 caracteres)">
-          <input type="password" style={inputStyle} value={senha} onChange={(e) => setSenha(e.target.value)} required />
-        </Campo>
-        <Campo label="Confirmar senha">
-          <input type="password" style={inputStyle} value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} required />
-        </Campo>
-        {erro && <p style={{ fontSize: 13, color: "#B23A48", marginBottom: 12 }}>{erro}</p>}
-        <button type="submit" disabled={carregando} style={{ ...buttonStyle, width: "100%" }}>
-          {carregando ? "Salvando…" : "Salvar senha e entrar"}
-        </button>
-      </form>
+    <div style={{ minHeight: "100vh", background: COLORS.ink, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
+      <div style={{ maxWidth: 380, width: "100%", margin: 20, padding: "32px 28px", background: "#fff", borderRadius: 6 }}>
+        <h1 style={{ ...fonteTitulo, fontSize: 19, marginBottom: 4, color: COLORS.ink }}>Defina sua senha</h1>
+        <p style={{ fontSize: 12, color: COLORS.inkSoft, marginBottom: 20 }}>Escolha a senha que você vai usar para entrar no portal.</p>
+        <form onSubmit={salvar}>
+          <Campo label="Nova senha (mínimo 8 caracteres)">
+            <input type="password" style={inputStyle} value={senha} onChange={(e) => setSenha(e.target.value)} required />
+          </Campo>
+          <Campo label="Confirmar senha">
+            <input type="password" style={inputStyle} value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} required />
+          </Campo>
+          {erro && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 12 }}>{erro}</p>}
+          <button type="submit" disabled={carregando} style={{ ...buttonStyle, width: "100%" }}>
+            {carregando ? "Salvando…" : "Salvar senha e entrar"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -252,7 +300,7 @@ function PainelUsuarios({ session }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 24 }}>
       <div>
-        <h3 style={{ fontSize: 13, color: "#666" }}>Convidar usuário</h3>
+        <h3 style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: 0.3 }}>Convidar usuário</h3>
         <form onSubmit={convidar}>
           <Campo label="Nome completo">
             <input style={inputStyle} value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
@@ -268,7 +316,7 @@ function PainelUsuarios({ session }) {
               <option value="admin">Administração</option>
             </select>
           </Campo>
-          <button type="submit" disabled={enviando} style={{ ...buttonStyle, width: "100%" }}>
+          <button type="submit" disabled={enviando} style={{ ...buttonStyle, width: "100%", background: COLORS.teal }}>
             {enviando ? "Enviando…" : "Enviar convite por e-mail"}
           </button>
         </form>
@@ -276,13 +324,13 @@ function PainelUsuarios({ session }) {
       </div>
 
       <div>
-        <h3 style={{ fontSize: 13, color: "#666" }}>Usuários ({usuarios.length})</h3>
+        <h3 style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: 0.3 }}>Usuários ({usuarios.length})</h3>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {usuarios.map((u) => (
-            <div key={u.id} style={{ border: "1px solid #D6DAD2", borderRadius: 4, padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <div key={u.id} style={{ border: `1px solid ${COLORS.line}`, borderRadius: 4, padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
               <div>
                 <div style={{ fontSize: 13 }}>{u.nome}</div>
-                <div style={{ fontSize: 11, color: "#888" }}>{emailDe(u) || "—"}</div>
+                <div style={{ fontSize: 11, color: COLORS.inkSoft }}>{emailDe(u) || "—"}</div>
               </div>
               <select
                 value={u.cargo}
@@ -304,17 +352,167 @@ function PainelUsuarios({ session }) {
   );
 }
 
+// ------------------------------------------------ Modal: nova reserva
+function ModalNovaReserva({ ambiente, valores, onMudar, onFechar, onConfirmar, mensagem }) {
+  return (
+    <Modal onFechar={onFechar}>
+      <div style={{ ...fonteTitulo, fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Nova reserva</div>
+      <div style={{ fontSize: 12, color: COLORS.inkSoft, marginBottom: 18 }}>
+        {ambiente?.nome} — {TIPO_AMBIENTE_LABEL[ambiente?.tipo]} · capacidade {ambiente?.capacidade} · antecedência mínima {ambiente?.antecedencia_horas}h
+      </div>
+
+      <form onSubmit={onConfirmar}>
+        <Campo label="Tipo">
+          <select style={inputStyle} value={valores.tipo} onChange={(e) => onMudar({ ...valores, tipo: e.target.value })}>
+            <option value="grupo_estudos">Grupo de estudos</option>
+            <option value="monitoria">Monitoria</option>
+            <option value="professor">Professor</option>
+          </select>
+        </Campo>
+        <Campo label="Finalidade">
+          <input style={inputStyle} value={valores.finalidade} onChange={(e) => onMudar({ ...valores, finalidade: e.target.value })} required />
+        </Campo>
+        <Campo label="Data">
+          <input type="date" style={inputStyle} value={valores.data} onChange={(e) => onMudar({ ...valores, data: e.target.value })} required />
+        </Campo>
+        <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <Campo label="Início">
+              <input type="time" style={inputStyle} value={valores.horaInicio} onChange={(e) => onMudar({ ...valores, horaInicio: e.target.value })} required />
+            </Campo>
+          </div>
+          <div style={{ flex: 1 }}>
+            <Campo label="Fim">
+              <input type="time" style={inputStyle} value={valores.horaFim} onChange={(e) => onMudar({ ...valores, horaFim: e.target.value })} required />
+            </Campo>
+          </div>
+        </div>
+        <Campo label="Quantidade de pessoas">
+          <input type="number" min={1} style={inputStyle} value={valores.qtdPessoas} onChange={(e) => onMudar({ ...valores, qtdPessoas: e.target.value })} />
+        </Campo>
+
+        {mensagem && (
+          <div style={{ display: "flex", gap: 8, background: COLORS.dangerSoft, border: `1px solid ${COLORS.danger}`, color: COLORS.danger, fontSize: 12.5, padding: "10px 12px", marginBottom: 12, borderRadius: 4 }}>
+            <span>⚠️</span>
+            <span>{mensagem}</span>
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+          <button type="button" onClick={onFechar} style={{ background: "transparent", border: `1px solid ${COLORS.line}`, padding: "9px 16px", fontSize: 13.5, borderRadius: 4, cursor: "pointer" }}>
+            Cancelar
+          </button>
+          <button type="submit" style={{ ...buttonStyle, background: COLORS.teal }}>
+            Confirmar reserva
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ------------------------------------------------ Modal: detalhe da reserva
+function ModalDetalheReserva({ reserva, ambiente, podeCancelar, onFechar, onCancelar }) {
+  return (
+    <Modal onFechar={onFechar}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+        <div style={{ ...fonteTitulo, fontSize: 17, fontWeight: 600 }}>{TIPO_LABEL[reserva.tipo]}</div>
+        <span style={{ fontSize: 11, padding: "3px 8px", background: TIPO_SOFT[reserva.tipo], color: TIPO_COLOR[reserva.tipo], fontWeight: 600, borderRadius: 3 }}>{ambiente?.nome}</span>
+      </div>
+      <div style={{ fontSize: 13.5, color: COLORS.ink, marginBottom: 14 }}>{reserva.finalidade}</div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13, marginBottom: 14 }}>
+        <div><span style={{ color: COLORS.inkSoft }}>Responsável: </span>{reserva.profiles?.nome || "—"}</div>
+        {!!reserva.qtd_pessoas && <div><span style={{ color: COLORS.inkSoft }}>Participantes: </span>{reserva.qtd_pessoas}</div>}
+        <div><span style={{ color: COLORS.inkSoft }}>Data: </span>{dataBR(reserva.data)}</div>
+        <div><span style={{ color: COLORS.inkSoft }}>Horário: </span>{reserva.hora_inicio.slice(0, 5)}–{reserva.hora_fim.slice(0, 5)}</div>
+      </div>
+
+      {ambiente?.regras && (
+        <div style={{ borderTop: `1px solid ${COLORS.line}`, paddingTop: 12, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.ink, marginBottom: 6 }}>Regras de uso — {ambiente.nome}</div>
+          <div style={{ fontSize: 12.5, color: COLORS.inkSoft, background: COLORS.bg, padding: "10px 12px", borderRadius: 4, whiteSpace: "pre-wrap" }}>{ambiente.regras}</div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        {podeCancelar && (
+          <button onClick={() => onCancelar(reserva.id)} style={{ background: "transparent", border: `1px solid ${COLORS.danger}`, color: COLORS.danger, padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 4, cursor: "pointer" }}>
+            Cancelar reserva
+          </button>
+        )}
+        <button onClick={onFechar} style={{ ...buttonStyle, background: COLORS.teal }}>
+          Fechar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ------------------------------------------------ Grade de horários (agenda de um dia)
+function GradeAgenda({ reservasDoDia, onAbrirDetalhe }) {
+  const horaBase = 7;
+  const horaTopo = 21;
+  const altura = 720;
+  const totalMin = (horaTopo - horaBase) * 60;
+
+  return (
+    <div style={{ display: "flex", border: `1px solid ${COLORS.line}`, borderRadius: 4, overflow: "hidden" }}>
+      <div style={{ width: 46, borderRight: `1px solid ${COLORS.line}`, position: "relative", height: altura, flexShrink: 0 }}>
+        {Array.from({ length: horaTopo - horaBase + 1 }, (_, i) => horaBase + i).map((h) => (
+          <div key={h} style={{ position: "absolute", top: ((h - horaBase) * 60 / totalMin) * altura - 6, right: 6, fontSize: 10.5, color: COLORS.inkSoft }}>
+            {String(h).padStart(2, "0")}h
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "relative", flex: 1, height: altura, background: `repeating-linear-gradient(180deg, transparent, transparent calc(${altura / (horaTopo - horaBase)}px - 1px), ${COLORS.line} calc(${altura / (horaTopo - horaBase)}px - 1px), ${COLORS.line} calc(${altura / (horaTopo - horaBase)}px))` }}>
+        {reservasDoDia.map((r) => {
+          const ini = r.hora_inicio.slice(0, 5);
+          const fim = r.hora_fim.slice(0, 5);
+          const top = ((toMinutosHHMM(ini) - horaBase * 60) / totalMin) * altura;
+          const height = ((toMinutosHHMM(fim) - toMinutosHHMM(ini)) / totalMin) * altura;
+          return (
+            <button
+              key={r.id}
+              onClick={() => onAbrirDetalhe(r)}
+              title="Clique para ver os detalhes"
+              style={{
+                position: "absolute", top, height: Math.max(height, 40), left: 8, right: 8,
+                background: TIPO_SOFT[r.tipo], borderLeft: `3px solid ${TIPO_COLOR[r.tipo]}`,
+                padding: "4px 10px", fontSize: 12, overflow: "hidden", textAlign: "left",
+                border: "none", borderLeftWidth: 3, borderLeftStyle: "solid", borderLeftColor: TIPO_COLOR[r.tipo],
+                cursor: "pointer", display: "flex", flexDirection: "column", justifyContent: "center", gap: 1, borderRadius: 2,
+              }}
+            >
+              <div style={{ fontWeight: 600, color: TIPO_COLOR[r.tipo], whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden", fontSize: 11 }}>
+                {ini}–{fim} · {TIPO_LABEL[r.tipo]}
+              </div>
+              <div style={{ color: COLORS.inkSoft, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                {r.finalidade}{r.profiles?.nome ? ` — ${r.profiles.nome}` : ""}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------ Tela principal
 function TelaPrincipal({ session, perfil }) {
   const [aba, setAba] = useState("reservas"); // "reservas" | "usuarios"
+  const [categoria, setCategoria] = useState("laboratorio");
   const [ambientes, setAmbientes] = useState([]);
   const [ambienteSelecionado, setAmbienteSelecionado] = useState(null);
+  const [dataSelecionada, setDataSelecionada] = useState(hojeISO());
   const [reservas, setReservas] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [mensagem, setMensagem] = useState("");
   const [aviso, setAviso] = useState("");
+  const [modalAberto, setModalAberto] = useState(false);
+  const [detalhe, setDetalhe] = useState(null);
 
-  const [novaReserva, setNovaReserva] = useState({ tipo: "grupo_estudos", finalidade: "", data: "", horaInicio: "", horaFim: "", qtdPessoas: 1 });
+  const [novaReserva, setNovaReserva] = useState({ tipo: "grupo_estudos", finalidade: "", data: hojeISO(), horaInicio: "", horaFim: "", qtdPessoas: 1 });
   const [novoAmbiente, setNovoAmbiente] = useState({ nome: "", tipo: "laboratorio", capacidade: 10, antecedenciaHoras: 48 });
 
   async function carregarAmbientes() {
@@ -324,7 +522,10 @@ function TelaPrincipal({ session, perfil }) {
       return;
     }
     setAmbientes(data);
-    if (data.length > 0 && !ambienteSelecionado) setAmbienteSelecionado(data[0].id);
+    if (!ambienteSelecionado) {
+      const primeiro = data.find((a) => a.tipo === categoria) || data[0];
+      if (primeiro) setAmbienteSelecionado(primeiro.id);
+    }
   }
 
   async function carregarReservas(ambienteId) {
@@ -349,6 +550,18 @@ function TelaPrincipal({ session, perfil }) {
   useEffect(() => {
     if (ambienteSelecionado) carregarReservas(ambienteSelecionado);
   }, [ambienteSelecionado]);
+
+  function selecionarCategoria(tipo) {
+    setCategoria(tipo);
+    const primeiro = ambientes.find((a) => a.tipo === tipo);
+    if (primeiro) setAmbienteSelecionado(primeiro.id);
+  }
+
+  function abrirModalNovaReserva() {
+    setMensagem("");
+    setNovaReserva({ tipo: "grupo_estudos", finalidade: "", data: dataSelecionada, horaInicio: "", horaFim: "", qtdPessoas: 1 });
+    setModalAberto(true);
+  }
 
   async function criarReserva(e) {
     e.preventDefault();
@@ -389,7 +602,6 @@ function TelaPrincipal({ session, perfil }) {
     });
     if (error) {
       if (error.code === "23P01") {
-        // Alguém reservou esse horário no meio tempo: atualiza a lista e avisa
         setMensagem("Esse horário acabou de ser reservado por outra pessoa. Veja a lista atualizada e escolha outro horário.");
         carregarReservas(ambienteSelecionado);
       } else if (error.code === "23514") {
@@ -399,7 +611,8 @@ function TelaPrincipal({ session, perfil }) {
       }
     } else {
       setAviso("Reserva criada.");
-      setNovaReserva({ tipo: "grupo_estudos", finalidade: "", data: "", horaInicio: "", horaFim: "", qtdPessoas: 1 });
+      setModalAberto(false);
+      setDataSelecionada(novaReserva.data);
       carregarReservas(ambienteSelecionado);
     }
   }
@@ -407,8 +620,12 @@ function TelaPrincipal({ session, perfil }) {
   async function cancelarReserva(id) {
     setAviso("");
     const { error } = await supabase.from("reservas").delete().eq("id", id);
-    if (error) setMensagem(error.message);
-    else carregarReservas(ambienteSelecionado);
+    if (error) {
+      setMensagem(error.message);
+    } else {
+      setDetalhe(null);
+      carregarReservas(ambienteSelecionado);
+    }
   }
 
   async function criarAmbiente(e) {
@@ -430,158 +647,162 @@ function TelaPrincipal({ session, perfil }) {
 
   const ambiente = ambientes.find((a) => a.id === ambienteSelecionado);
   const ehAdmin = perfil?.cargo === "admin";
+  const ambientesDaCategoria = ambientes.filter((a) => a.tipo === categoria);
+  const reservasDoDia = reservas.filter((r) => r.data === dataSelecionada).sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio));
 
   if (carregando) return <p style={{ padding: 24, fontFamily: "sans-serif" }}>Carregando…</p>;
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: 24, fontFamily: "sans-serif", color: "#1B2430" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div>
-          <h1 style={{ fontSize: 20, margin: 0 }}>Portal de Reservas Acadêmicas</h1>
-          <p style={{ fontSize: 12, color: "#666", margin: "4px 0 0" }}>
-            {perfil?.nome} — {CARGO_LABEL[perfil?.cargo] || perfil?.cargo}
-          </p>
+    <div style={{ minHeight: "100vh", background: COLORS.bg, fontFamily: "'Inter', sans-serif", color: COLORS.ink }}>
+      <header style={{ background: COLORS.ink, color: "#fff", padding: "18px 24px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <h1 style={{ ...fonteTitulo, fontSize: 18, margin: 0 }}>Portal de Reservas Acadêmicas</h1>
+            <p style={{ fontSize: 12, opacity: 0.75, margin: "4px 0 0" }}>
+              {perfil?.nome} — {CARGO_LABEL[perfil?.cargo] || perfil?.cargo}
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {ehAdmin && (
+              <div style={{ display: "flex", gap: 4 }}>
+                <button onClick={() => setAba("reservas")} style={{ background: aba === "reservas" ? "#fff" : "transparent", color: aba === "reservas" ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
+                  Reservas
+                </button>
+                <button onClick={() => setAba("usuarios")} style={{ background: aba === "usuarios" ? "#fff" : "transparent", color: aba === "usuarios" ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
+                  Usuários
+                </button>
+              </div>
+            )}
+            <button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
+              Sair
+            </button>
+          </div>
         </div>
-        <button onClick={() => supabase.auth.signOut()} style={{ ...buttonStyle, background: "transparent", color: "#1B2430", border: "1px solid #D6DAD2" }}>
-          Sair
-        </button>
       </header>
 
-      {ehAdmin && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-          <button onClick={() => setAba("reservas")} style={{ ...buttonStyle, background: aba === "reservas" ? "#1B2430" : "#eee", color: aba === "reservas" ? "#fff" : "#333" }}>
-            Reservas
-          </button>
-          <button onClick={() => setAba("usuarios")} style={{ ...buttonStyle, background: aba === "usuarios" ? "#1B2430" : "#eee", color: aba === "usuarios" ? "#fff" : "#333" }}>
-            Usuários
-          </button>
-        </div>
-      )}
+      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 24px 64px" }}>
+        {aba === "usuarios" && ehAdmin ? (
+          <PainelUsuarios session={session} />
+        ) : (
+          <>
+            {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 16 }}>{mensagem}</p>}
+            {aviso && <p style={{ fontSize: 13, color: COLORS.teal, marginBottom: 16 }}>{aviso}</p>}
 
-      {aba === "usuarios" && ehAdmin ? (
-        <PainelUsuarios session={session} />
-      ) : (
-        <>
-          {mensagem && <p style={{ fontSize: 13, color: "#B23A48", marginBottom: 16 }}>{mensagem}</p>}
-          {aviso && <p style={{ fontSize: 13, color: "#2F6F6B", marginBottom: 16 }}>{aviso}</p>}
+            <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 24 }}>
+              <div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                  {Object.entries(TIPO_AMBIENTE_LABEL_PLURAL).map(([tipo, label]) => (
+                    <button
+                      key={tipo}
+                      onClick={() => selecionarCategoria(tipo)}
+                      style={{
+                        flex: 1, textAlign: "center", padding: "9px 8px", fontSize: 12.5, fontWeight: 600, borderRadius: 4, cursor: "pointer",
+                        background: categoria === tipo ? COLORS.teal : COLORS.panel,
+                        color: categoria === tipo ? "#fff" : COLORS.ink,
+                        border: `1px solid ${categoria === tipo ? COLORS.teal : COLORS.line}`,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 24 }}>
-            <div>
-              <h3 style={{ fontSize: 13, color: "#666" }}>Ambientes</h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {ambientes.map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => setAmbienteSelecionado(a.id)}
-                    style={{
-                      textAlign: "left",
-                      padding: "8px 10px",
-                      borderRadius: 4,
-                      border: `1px solid ${a.id === ambienteSelecionado ? "#1B2430" : "#D6DAD2"}`,
-                      background: a.id === ambienteSelecionado ? "#EFF1EA" : "#fff",
-                      cursor: "pointer",
-                      fontSize: 13,
-                    }}
-                  >
-                    <div>{a.nome}</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>{TIPO_AMBIENTE_LABEL[a.tipo]}</div>
-                  </button>
-                ))}
-                {ambientes.length === 0 && <p style={{ fontSize: 12, color: "#888" }}>Nenhum ambiente cadastrado.</p>}
+                <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, marginBottom: 8 }}>
+                  {TIPO_AMBIENTE_LABEL_PLURAL[categoria]} ({ambientesDaCategoria.length})
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {ambientesDaCategoria.map((a) => (
+                    <button
+                      key={a.id}
+                      onClick={() => setAmbienteSelecionado(a.id)}
+                      style={{
+                        textAlign: "left", padding: "10px 12px", borderRadius: 4, cursor: "pointer", fontSize: 13.5,
+                        border: `1px solid ${a.id === ambienteSelecionado ? COLORS.teal : COLORS.line}`,
+                        background: a.id === ambienteSelecionado ? COLORS.tealSoft : COLORS.panel,
+                      }}
+                    >
+                      <div style={{ fontWeight: 500 }}>{a.nome}</div>
+                      <div style={{ fontSize: 11, color: COLORS.inkSoft, marginTop: 2 }}>capacidade {a.capacidade} · antecedência {a.antecedencia_horas}h</div>
+                    </button>
+                  ))}
+                  {ambientesDaCategoria.length === 0 && <p style={{ fontSize: 12, color: COLORS.inkSoft }}>Nenhum ambiente nesta categoria.</p>}
+                </div>
+
+                {ehAdmin && (
+                  <div style={{ marginTop: 24 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, marginBottom: 8 }}>Novo ambiente (admin)</div>
+                    <form onSubmit={criarAmbiente}>
+                      <Campo label="Nome">
+                        <input style={inputStyle} value={novoAmbiente.nome} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, nome: e.target.value })} required />
+                      </Campo>
+                      <Campo label="Tipo">
+                        <select style={inputStyle} value={novoAmbiente.tipo} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, tipo: e.target.value })}>
+                          <option value="laboratorio">Laboratório</option>
+                          <option value="sala_tutoria">Sala de tutoria</option>
+                        </select>
+                      </Campo>
+                      <Campo label="Capacidade">
+                        <input type="number" min={1} style={inputStyle} value={novoAmbiente.capacidade} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, capacidade: e.target.value })} />
+                      </Campo>
+                      <Campo label="Antecedência (horas)">
+                        <input type="number" min={0} step="0.5" style={inputStyle} value={novoAmbiente.antecedenciaHoras} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, antecedenciaHoras: e.target.value })} />
+                      </Campo>
+                      <button type="submit" style={{ ...buttonStyle, width: "100%" }}>Adicionar ambiente</button>
+                    </form>
+                  </div>
+                )}
               </div>
 
-              {ehAdmin && (
-                <div style={{ marginTop: 24 }}>
-                  <h3 style={{ fontSize: 13, color: "#666" }}>Novo ambiente (admin)</h3>
-                  <form onSubmit={criarAmbiente}>
-                    <Campo label="Nome">
-                      <input style={inputStyle} value={novoAmbiente.nome} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, nome: e.target.value })} required />
-                    </Campo>
-                    <Campo label="Tipo">
-                      <select style={inputStyle} value={novoAmbiente.tipo} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, tipo: e.target.value })}>
-                        <option value="laboratorio">Laboratório</option>
-                        <option value="sala_tutoria">Sala de tutoria</option>
-                      </select>
-                    </Campo>
-                    <Campo label="Capacidade">
-                      <input type="number" min={1} style={inputStyle} value={novoAmbiente.capacidade} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, capacidade: e.target.value })} />
-                    </Campo>
-                    <Campo label="Antecedência (horas)">
-                      <input type="number" min={0} step="0.5" style={inputStyle} value={novoAmbiente.antecedenciaHoras} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, antecedenciaHoras: e.target.value })} />
-                    </Campo>
-                    <button type="submit" style={{ ...buttonStyle, width: "100%" }}>Adicionar ambiente</button>
-                  </form>
-                </div>
-              )}
-            </div>
-
-            <div>
-              {ambiente && (
-                <>
-                  <h2 style={{ fontSize: 16 }}>{ambiente.nome}</h2>
-                  <p style={{ fontSize: 12, color: "#888", marginTop: -8 }}>
-                    {TIPO_AMBIENTE_LABEL[ambiente.tipo]} · capacidade {ambiente.capacidade} · antecedência mínima {ambiente.antecedencia_horas}h
-                  </p>
-
-                  <h3 style={{ fontSize: 13, color: "#666", marginTop: 20 }}>Reservas</h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
-                    {reservas.map((r) => (
-                      <div key={r.id} style={{ border: "1px solid #D6DAD2", borderRadius: 4, padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-                        <div>
-                          <div>
-                            {r.data} · {r.hora_inicio.slice(0, 5)}–{r.hora_fim.slice(0, 5)} · {r.finalidade}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#888" }}>
-                            {r.profiles?.nome || "—"} · {r.tipo}
-                          </div>
-                        </div>
-                        {(r.usuario_id === session.user.id || ehAdmin) && (
-                          <button onClick={() => cancelarReserva(r.id)} style={{ background: "transparent", border: "none", color: "#B23A48", cursor: "pointer", fontSize: 12 }}>
-                            Cancelar
-                          </button>
-                        )}
+              <div>
+                {ambiente && (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+                      <div>
+                        <h2 style={{ ...fonteTitulo, fontSize: 17, margin: 0 }}>{ambiente.nome}</h2>
+                        <p style={{ fontSize: 12, color: COLORS.inkSoft, margin: "4px 0 0" }}>
+                          {TIPO_AMBIENTE_LABEL[ambiente.tipo]} · capacidade {ambiente.capacidade} · antecedência mínima {ambiente.antecedencia_horas}h
+                        </p>
                       </div>
-                    ))}
-                    {reservas.length === 0 && <p style={{ fontSize: 12, color: "#888" }}>Nenhuma reserva ainda para este ambiente.</p>}
-                  </div>
-
-                  <h3 style={{ fontSize: 13, color: "#666" }}>Nova reserva</h3>
-                  <form onSubmit={criarReserva} style={{ maxWidth: 400 }}>
-                    <Campo label="Tipo">
-                      <select style={inputStyle} value={novaReserva.tipo} onChange={(e) => setNovaReserva({ ...novaReserva, tipo: e.target.value })}>
-                        <option value="grupo_estudos">Grupo de estudos</option>
-                        <option value="monitoria">Monitoria</option>
-                        <option value="professor">Professor</option>
-                      </select>
-                    </Campo>
-                    <Campo label="Finalidade">
-                      <input style={inputStyle} value={novaReserva.finalidade} onChange={(e) => setNovaReserva({ ...novaReserva, finalidade: e.target.value })} required />
-                    </Campo>
-                    <Campo label="Data">
-                      <input type="date" style={inputStyle} value={novaReserva.data} onChange={(e) => setNovaReserva({ ...novaReserva, data: e.target.value })} required />
-                    </Campo>
-                    <div style={{ display: "flex", gap: 12 }}>
-                      <div style={{ flex: 1 }}>
-                        <Campo label="Início">
-                          <input type="time" style={inputStyle} value={novaReserva.horaInicio} onChange={(e) => setNovaReserva({ ...novaReserva, horaInicio: e.target.value })} required />
-                        </Campo>
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <Campo label="Fim">
-                          <input type="time" style={inputStyle} value={novaReserva.horaFim} onChange={(e) => setNovaReserva({ ...novaReserva, horaFim: e.target.value })} required />
-                        </Campo>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <input type="date" style={{ ...inputStyle, width: "auto" }} value={dataSelecionada} onChange={(e) => setDataSelecionada(e.target.value)} />
+                        <button onClick={abrirModalNovaReserva} style={{ ...buttonStyle, background: COLORS.teal, whiteSpace: "nowrap" }}>
+                          + Nova reserva
+                        </button>
                       </div>
                     </div>
-                    <Campo label="Quantidade de pessoas">
-                      <input type="number" min={1} style={inputStyle} value={novaReserva.qtdPessoas} onChange={(e) => setNovaReserva({ ...novaReserva, qtdPessoas: e.target.value })} />
-                    </Campo>
-                    <button type="submit" style={{ ...buttonStyle, width: "100%" }}>Confirmar reserva</button>
-                  </form>
-                </>
-              )}
+
+                    <GradeAgenda reservasDoDia={reservasDoDia} onAbrirDetalhe={setDetalhe} />
+
+                    <p style={{ fontSize: 11.5, color: COLORS.inkSoft, marginTop: 10 }}>
+                      Clique em uma reserva para ver os detalhes. Você pode cancelar suas próprias reservas; a administração pode cancelar qualquer uma.
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        </>
+          </>
+        )}
+      </main>
+
+      {modalAberto && (
+        <ModalNovaReserva
+          ambiente={ambiente}
+          valores={novaReserva}
+          onMudar={setNovaReserva}
+          onFechar={() => setModalAberto(false)}
+          onConfirmar={criarReserva}
+          mensagem={mensagem}
+        />
+      )}
+
+      {detalhe && (
+        <ModalDetalheReserva
+          reserva={detalhe}
+          ambiente={ambiente}
+          podeCancelar={detalhe.usuario_id === session.user.id || ehAdmin}
+          onFechar={() => setDetalhe(null)}
+          onCancelar={cancelarReserva}
+        />
       )}
     </div>
   );
@@ -627,7 +848,6 @@ export default function App() {
     : "";
   if (!session) return <TelaAutenticacao avisoInicial={avisoLinkExpirado} />;
 
-  // Convidado que ainda não escolheu senha (ou pediu redefinição): tela de definir senha antes de tudo.
   const convidadoSemSenha = !!session.user.invited_at && !session.user.user_metadata?.senha_definida;
   if (!senhaConcluida && (senhaPendente || convidadoSemSenha)) {
     return <TelaDefinirSenha onConcluido={() => { setSenhaConcluida(true); setSenhaPendente(false); }} />;
