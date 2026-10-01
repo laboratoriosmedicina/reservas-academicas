@@ -391,6 +391,12 @@ function ModalNovaReserva({ ambiente, valores, onMudar, onFechar, onConfirmar, m
           <input type="number" min={1} style={inputStyle} value={valores.qtdPessoas} onChange={(e) => onMudar({ ...valores, qtdPessoas: e.target.value })} />
         </Campo>
 
+        {valores.tipo === "professor" && (
+          <Campo label="Material necessário" hint="Visível apenas para você e para a administração.">
+            <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 60 }} value={valores.material} onChange={(e) => onMudar({ ...valores, material: e.target.value })} placeholder="Ex.: manequim de simulação, kit de suturas, projetor…" />
+          </Campo>
+        )}
+
         {mensagem && (
           <div style={{ display: "flex", gap: 8, background: COLORS.dangerSoft, border: `1px solid ${COLORS.danger}`, color: COLORS.danger, fontSize: 12.5, padding: "10px 12px", marginBottom: 12, borderRadius: 4 }}>
             <span>⚠️</span>
@@ -422,11 +428,30 @@ function ModalDetalheReserva({ reserva, ambiente, podeCancelar, onFechar, onCanc
       <div style={{ fontSize: 13.5, color: COLORS.ink, marginBottom: 14 }}>{reserva.finalidade}</div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13, marginBottom: 14 }}>
-        <div><span style={{ color: COLORS.inkSoft }}>Responsável: </span>{reserva.profiles?.nome || "—"}</div>
+        {reserva.tipo === "grupo_estudos" && !reserva.responsavel_nome ? (
+          <div style={{ color: COLORS.inkSoft, fontStyle: "italic" }}>O responsável por este grupo de estudos é visível apenas para a administração.</div>
+        ) : (
+          <div><span style={{ color: COLORS.inkSoft }}>Responsável: </span>{reserva.responsavel_nome || "—"}</div>
+        )}
         {!!reserva.qtd_pessoas && <div><span style={{ color: COLORS.inkSoft }}>Participantes: </span>{reserva.qtd_pessoas}</div>}
         <div><span style={{ color: COLORS.inkSoft }}>Data: </span>{dataBR(reserva.data)}</div>
         <div><span style={{ color: COLORS.inkSoft }}>Horário: </span>{reserva.hora_inicio.slice(0, 5)}–{reserva.hora_fim.slice(0, 5)}</div>
       </div>
+
+      {reserva.tipo === "professor" && (
+        <div style={{ borderTop: `1px solid ${COLORS.line}`, paddingTop: 12, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.ink, marginBottom: 6 }}>Material necessário</div>
+          {reserva.material !== null && reserva.material !== undefined ? (
+            reserva.material ? (
+              <div style={{ fontSize: 13, color: COLORS.ink, background: COLORS.bg, padding: "10px 12px", borderRadius: 4, whiteSpace: "pre-wrap" }}>{reserva.material}</div>
+            ) : (
+              <div style={{ fontSize: 12.5, color: COLORS.inkSoft }}>Nenhum material informado.</div>
+            )
+          ) : (
+            <div style={{ fontSize: 12.5, color: COLORS.inkSoft }}>🔒 Visível apenas para o responsável pela reserva e para a administração.</div>
+          )}
+        </div>
+      )}
 
       {ambiente?.regras && (
         <div style={{ borderTop: `1px solid ${COLORS.line}`, paddingTop: 12, marginBottom: 16 }}>
@@ -488,7 +513,7 @@ function GradeAgenda({ reservasDoDia, onAbrirDetalhe }) {
                 {ini}–{fim} · {TIPO_LABEL[r.tipo]}
               </div>
               <div style={{ color: COLORS.inkSoft, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
-                {r.finalidade}{r.profiles?.nome ? ` — ${r.profiles.nome}` : ""}
+                {r.finalidade}{r.responsavel_nome ? ` — ${r.responsavel_nome}` : ""}
               </div>
             </button>
           );
@@ -512,7 +537,7 @@ function TelaPrincipal({ session, perfil }) {
   const [modalAberto, setModalAberto] = useState(false);
   const [detalhe, setDetalhe] = useState(null);
 
-  const [novaReserva, setNovaReserva] = useState({ tipo: "grupo_estudos", finalidade: "", data: hojeISO(), horaInicio: "", horaFim: "", qtdPessoas: 1 });
+  const [novaReserva, setNovaReserva] = useState({ tipo: "grupo_estudos", finalidade: "", data: hojeISO(), horaInicio: "", horaFim: "", qtdPessoas: 1, material: "" });
   const [novoAmbiente, setNovoAmbiente] = useState({ nome: "", tipo: "laboratorio", capacidade: 10, antecedenciaHoras: 48 });
 
   async function carregarAmbientes() {
@@ -531,8 +556,8 @@ function TelaPrincipal({ session, perfil }) {
   async function carregarReservas(ambienteId) {
     if (!ambienteId) return;
     const { data, error } = await supabase
-      .from("reservas")
-      .select("*, profiles(nome)")
+      .from("reservas_visiveis")
+      .select("*")
       .eq("ambiente_id", ambienteId)
       .order("data")
       .order("hora_inicio");
@@ -559,7 +584,7 @@ function TelaPrincipal({ session, perfil }) {
 
   function abrirModalNovaReserva() {
     setMensagem("");
-    setNovaReserva({ tipo: "grupo_estudos", finalidade: "", data: dataSelecionada, horaInicio: "", horaFim: "", qtdPessoas: 1 });
+    setNovaReserva({ tipo: "grupo_estudos", finalidade: "", data: dataSelecionada, horaInicio: "", horaFim: "", qtdPessoas: 1, material: "" });
     setModalAberto(true);
   }
 
@@ -599,6 +624,7 @@ function TelaPrincipal({ session, perfil }) {
       hora_inicio: novaReserva.horaInicio,
       hora_fim: novaReserva.horaFim,
       qtd_pessoas: novaReserva.qtdPessoas || null,
+      material: novaReserva.tipo === "professor" ? novaReserva.material || null : null,
     });
     if (error) {
       if (error.code === "23P01") {
