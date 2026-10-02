@@ -105,6 +105,42 @@ function validarLimites({ cargo, tipo, antecedenciaHoras, data, horaInicio, hora
   return { erro: null };
 }
 
+function diaSemanaDe(iso) {
+  return new Date(`${iso}T00:00:00`).getDay();
+}
+
+function addDias(iso, n) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Gera as datas (entre dataInicio e dataFim, incluindo ambas) cujo dia da semana está em diasSemana.
+export function gerarOcorrencias(dataInicio, dataFim, diasSemana) {
+  const datas = [];
+  let cursor = dataInicio;
+  let guarda = 0;
+  while (cursor <= dataFim && guarda < 1000) {
+    if (!diasSemana || diasSemana.length === 0 || diasSemana.includes(diaSemanaDe(cursor))) {
+      datas.push(cursor);
+    }
+    cursor = addDias(cursor, 1);
+    guarda++;
+  }
+  return datas;
+}
+
+// Procura, na lista de ocorrências (em ordem), a primeira que colide com alguma reserva existente.
+export function acharPrimeiroConflito(reservasExistentes, ocorrencias, horaInicio, horaFim) {
+  for (const data of ocorrencias) {
+    const r = reservasExistentes.find(
+      (x) => x.data === data && x.hora_inicio.slice(0, 5) < horaFim && horaInicio < x.hora_fim.slice(0, 5),
+    );
+    if (r) return { data, reserva: r };
+  }
+  return null;
+}
+
 function toMinutosHHMM(hhmm) {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
@@ -417,6 +453,293 @@ function ModalNovaReserva({ ambiente, valores, onMudar, onFechar, onConfirmar, m
   );
 }
 
+const DIAS_SEMANA_LABEL = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+// ------------------------------------------------ Modal: reserva do professor (múltiplas salas + recorrência)
+function ModalReservaProfessor({ session, perfil, ambientes, professores, dataInicial, onFechar, onConcluido }) {
+  const [tipo, setTipo] = useState("professor");
+  const [finalidade, setFinalidade] = useState("");
+  const [material, setMaterial] = useState("");
+  const [qtdPessoas, setQtdPessoas] = useState(1);
+  const [salasSel, setSalasSel] = useState([]); // { ambienteId, professorAssociadoId }
+  const [dataInicio, setDataInicio] = useState(dataInicial);
+  const [dataFim, setDataFim] = useState(dataInicial);
+  const [diasSemana, setDiasSemana] = useState([diaSemanaDe(dataInicial)]);
+  const [horaInicio, setHoraInicio] = useState("08:00");
+  const [horaFim, setHoraFim] = useState("09:00");
+  const [mensagem, setMensagem] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [resultado, setResultado] = useState(null); // { sucesso, totalReservas, bloqueadas: [{nome, motivo}] }
+
+  const ehAdmin = perfil?.cargo === "admin";
+
+  function alternarSala(id) {
+    setSalasSel((prev) => (prev.some((s) => s.ambienteId === id) ? prev.filter((s) => s.ambienteId !== id) : [...prev, { ambienteId: id, professorAssociadoId: "" }]));
+  }
+  function setAssociado(id, profId) {
+    setSalasSel((prev) => prev.map((s) => (s.ambienteId === id ? { ...s, professorAssociadoId: profId } : s)));
+  }
+  function alternarDia(d) {
+    setDiasSemana((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()));
+  }
+
+  async function confirmar(e) {
+    e.preventDefault();
+    setMensagem("");
+
+    if (salasSel.length === 0) {
+      setMensagem("Selecione ao menos uma sala.");
+      return;
+    }
+    if (dataFim < dataInicio) {
+      setMensagem("A data final não pode ser antes da data inicial.");
+      return;
+    }
+    if (horaFim <= horaInicio) {
+      setMensagem("O horário final precisa ser depois do inicial.");
+      return;
+    }
+    const dias = diasSemana.length > 0 ? diasSemana : [diaSemanaDe(dataInicio)];
+    const ocorrencias = gerarOcorrencias(dataInicio, dataFim, dias);
+    if (ocorrencias.length === 0) {
+      setMensagem("Nenhuma data válida nesse intervalo com os dias da semana selecionados.");
+      return;
+    }
+
+    setEnviando(true);
+
+    const idsAmbientes = salasSel.map((s) => s.ambienteId);
+    const { data: existentes, error: erroBusca } = await supabase
+      .from("reservas")
+      .select("ambiente_id, data, hora_inicio, hora_fim, finalidade")
+      .in("ambiente_id", idsAmbientes)
+      .gte("data", dataInicio)
+      .lte("data", dataFim);
+
+    if (erroBusca) {
+      setMensagem(erroBusca.message);
+      setEnviando(false);
+      return;
+    }
+
+    let totalSucesso = 0;
+    const bloqueadas = [];
+
+    for (const sala of salasSel) {
+      const ambiente = ambientes.find((a) => a.id === sala.ambienteId);
+
+      const limite = validarLimites({
+        cargo: perfil?.cargo,
+        tipo: ambiente.tipo,
+        antecedenciaHoras: Number(ambiente.antecedencia_horas) || 0,
+        data: ocorrencias[0],
+        horaInicio,
+        horaFim,
+      });
+      if (limite.erro) {
+        bloqueadas.push({ nome: ambiente.nome, motivo: limite.erro });
+        continue;
+      }
+
+      const existentesDaSala = existentes.filter((r) => r.ambiente_id === sala.ambienteId);
+      const conflito = acharPrimeiroConflito(existentesDaSala, ocorrencias, horaInicio, horaFim);
+      if (conflito) {
+        bloqueadas.push({
+          nome: ambiente.nome,
+          motivo: `já ocupado em ${dataBR(conflito.data)} das ${conflito.reserva.hora_inicio.slice(0, 5)} às ${conflito.reserva.hora_fim.slice(0, 5)} (${conflito.reserva.finalidade})`,
+        });
+        continue;
+      }
+
+      const responsavelId = sala.professorAssociadoId || session.user.id;
+      const linhas = ocorrencias.map((data) => ({
+        ambiente_id: sala.ambienteId,
+        usuario_id: responsavelId,
+        tipo,
+        finalidade,
+        data,
+        hora_inicio: horaInicio,
+        hora_fim: horaFim,
+        qtd_pessoas: qtdPessoas || null,
+        material: tipo === "professor" ? material || null : null,
+      }));
+
+      const { error: erroInsercao } = await supabase.from("reservas").insert(linhas);
+      if (erroInsercao) {
+        const motivo =
+          erroInsercao.code === "23P01"
+            ? "alguém reservou um desses horários enquanto você preenchia o formulário"
+            : erroInsercao.message;
+        bloqueadas.push({ nome: ambiente.nome, motivo });
+      } else {
+        totalSucesso += linhas.length;
+      }
+    }
+
+    setEnviando(false);
+    setResultado({ totalSucesso, salasOk: salasSel.length - bloqueadas.length, bloqueadas });
+  }
+
+  if (resultado) {
+    return (
+      <Modal largura={520} onFechar={() => onConcluido()}>
+        <div style={{ ...fonteTitulo, fontSize: 18, fontWeight: 600, marginBottom: 14 }}>Resultado do lançamento</div>
+        {resultado.totalSucesso > 0 && (
+          <div style={{ fontSize: 13.5, color: COLORS.teal, marginBottom: 12 }}>
+            {resultado.salasOk} sala(s) confirmada(s), totalizando {resultado.totalSucesso} reserva(s).
+          </div>
+        )}
+        {resultado.bloqueadas.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.danger, marginBottom: 6 }}>
+              Não foi possível reservar em {resultado.bloqueadas.length} sala(s):
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {resultado.bloqueadas.map((b, i) => (
+                <div key={i} style={{ fontSize: 12.5, background: COLORS.dangerSoft, color: COLORS.danger, padding: "8px 10px", borderRadius: 4 }}>
+                  <strong>{b.nome}</strong> — {b.motivo}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+          <button onClick={() => onConcluido()} style={{ ...buttonStyle, background: COLORS.teal }}>Fechar</button>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal largura={620} onFechar={onFechar}>
+      <div style={{ ...fonteTitulo, fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Nova reserva</div>
+      <div style={{ fontSize: 12, color: COLORS.inkSoft, marginBottom: 18 }}>
+        Selecione uma ou mais salas. Se a data final for depois da inicial, a reserva se repete nos dias da semana marcados.
+      </div>
+
+      <form onSubmit={confirmar}>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Campo label="Tipo" style={{ flex: 1 }}>
+            <select style={inputStyle} value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              <option value="professor">Professor</option>
+              <option value="monitoria">Monitoria</option>
+              <option value="grupo_estudos">Grupo de estudos</option>
+            </select>
+          </Campo>
+          <Campo label="Quantidade de pessoas" style={{ flex: 1 }}>
+            <input type="number" min={1} style={inputStyle} value={qtdPessoas} onChange={(e) => setQtdPessoas(e.target.value)} />
+          </Campo>
+        </div>
+
+        <Campo label="Finalidade">
+          <input style={inputStyle} value={finalidade} onChange={(e) => setFinalidade(e.target.value)} required />
+        </Campo>
+
+        <Campo label="Salas (uma ou mais)">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {ambientes.map((a) => (
+              <button
+                type="button"
+                key={a.id}
+                onClick={() => alternarSala(a.id)}
+                style={{
+                  padding: "6px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer",
+                  border: `1px solid ${salasSel.some((s) => s.ambienteId === a.id) ? COLORS.teal : COLORS.line}`,
+                  background: salasSel.some((s) => s.ambienteId === a.id) ? COLORS.tealSoft : "#fff",
+                  color: salasSel.some((s) => s.ambienteId === a.id) ? COLORS.teal : COLORS.inkSoft,
+                }}
+              >
+                {a.nome}
+              </button>
+            ))}
+          </div>
+        </Campo>
+
+        {salasSel.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+            {salasSel.map((s) => {
+              const ambiente = ambientes.find((a) => a.id === s.ambienteId);
+              return (
+                <div key={s.ambienteId} style={{ display: "flex", alignItems: "center", gap: 8, background: COLORS.bg, padding: "8px 10px", fontSize: 12.5, borderRadius: 4, flexWrap: "wrap" }}>
+                  <span style={{ minWidth: 150 }}>{ambiente?.nome}</span>
+                  <span style={{ color: COLORS.inkSoft, whiteSpace: "nowrap" }}>professor associado:</span>
+                  <select value={s.professorAssociadoId} onChange={(e) => setAssociado(s.ambienteId, e.target.value)} style={{ ...inputStyle, width: "auto", padding: "5px 8px", fontSize: 12.5 }}>
+                    <option value="">Você (responsável)</option>
+                    {professores.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                  </select>
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 11, color: COLORS.inkSoft }}>
+              Ao associar um professor a uma sala, ele passa a ser o responsável por aquela reserva; as demais continuam com você.
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 12 }}>
+          <Campo label="Data inicial" style={{ flex: 1 }}>
+            <input type="date" style={inputStyle} value={dataInicio} onChange={(e) => { setDataInicio(e.target.value); if (dataFim < e.target.value) setDataFim(e.target.value); }} required />
+          </Campo>
+          <Campo label="Data final" style={{ flex: 1 }}>
+            <input type="date" style={inputStyle} value={dataFim} onChange={(e) => setDataFim(e.target.value)} required />
+          </Campo>
+        </div>
+
+        <Campo label="Dias da semana considerados">
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {DIAS_SEMANA_LABEL.map((label, i) => (
+              <button
+                type="button"
+                key={i}
+                onClick={() => alternarDia(i)}
+                style={{
+                  padding: "6px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer",
+                  border: `1px solid ${diasSemana.includes(i) ? COLORS.professor : COLORS.line}`,
+                  background: diasSemana.includes(i) ? COLORS.professorSoft : "#fff",
+                  color: diasSemana.includes(i) ? COLORS.professor : COLORS.inkSoft,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Campo>
+
+        <div style={{ display: "flex", gap: 12 }}>
+          <Campo label="Início" style={{ flex: 1 }}>
+            <input type="time" style={inputStyle} value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} required />
+          </Campo>
+          <Campo label="Fim" style={{ flex: 1 }}>
+            <input type="time" style={inputStyle} value={horaFim} onChange={(e) => setHoraFim(e.target.value)} required />
+          </Campo>
+        </div>
+
+        {tipo === "professor" && (
+          <Campo label="Material necessário" hint="Visível apenas para você e para a administração.">
+            <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 60 }} value={material} onChange={(e) => setMaterial(e.target.value)} placeholder="Ex.: manequim de simulação, kit de suturas, projetor…" />
+          </Campo>
+        )}
+
+        {mensagem && (
+          <div style={{ display: "flex", gap: 8, background: COLORS.dangerSoft, border: `1px solid ${COLORS.danger}`, color: COLORS.danger, fontSize: 12.5, padding: "10px 12px", marginBottom: 12, borderRadius: 4 }}>
+            <span>⚠️</span>
+            <span>{mensagem}</span>
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+          <button type="button" onClick={onFechar} style={{ background: "transparent", border: `1px solid ${COLORS.line}`, padding: "9px 16px", fontSize: 13.5, borderRadius: 4, cursor: "pointer" }}>
+            Cancelar
+          </button>
+          <button type="submit" disabled={enviando} style={{ ...buttonStyle, background: COLORS.teal }}>
+            {enviando ? "Lançando…" : "Confirmar reserva"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 // ------------------------------------------------ Modal: detalhe da reserva
 function ModalDetalheReserva({ reserva, ambiente, podeCancelar, onFechar, onCancelar }) {
   return (
@@ -535,7 +858,9 @@ function TelaPrincipal({ session, perfil }) {
   const [mensagem, setMensagem] = useState("");
   const [aviso, setAviso] = useState("");
   const [modalAberto, setModalAberto] = useState(false);
+  const [modalProfessorAberto, setModalProfessorAberto] = useState(false);
   const [detalhe, setDetalhe] = useState(null);
+  const [professores, setProfessores] = useState([]);
 
   const [novaReserva, setNovaReserva] = useState({ tipo: "grupo_estudos", finalidade: "", data: hojeISO(), horaInicio: "", horaFim: "", qtdPessoas: 1, material: "" });
   const [novoAmbiente, setNovoAmbiente] = useState({ nome: "", tipo: "laboratorio", capacidade: 10, antecedenciaHoras: 48 });
@@ -573,6 +898,17 @@ function TelaPrincipal({ session, perfil }) {
   }, []);
 
   useEffect(() => {
+    if (perfil?.cargo === "professor" || perfil?.cargo === "admin") {
+      supabase
+        .from("profiles")
+        .select("id, nome")
+        .eq("cargo", "professor")
+        .neq("id", session.user.id)
+        .then(({ data }) => setProfessores(data || []));
+    }
+  }, [perfil?.cargo]);
+
+  useEffect(() => {
     if (ambienteSelecionado) carregarReservas(ambienteSelecionado);
   }, [ambienteSelecionado]);
 
@@ -584,8 +920,17 @@ function TelaPrincipal({ session, perfil }) {
 
   function abrirModalNovaReserva() {
     setMensagem("");
-    setNovaReserva({ tipo: "grupo_estudos", finalidade: "", data: dataSelecionada, horaInicio: "", horaFim: "", qtdPessoas: 1, material: "" });
-    setModalAberto(true);
+    if (perfil?.cargo === "professor" || perfil?.cargo === "admin") {
+      setModalProfessorAberto(true);
+    } else {
+      setNovaReserva({ tipo: "grupo_estudos", finalidade: "", data: dataSelecionada, horaInicio: "", horaFim: "", qtdPessoas: 1, material: "" });
+      setModalAberto(true);
+    }
+  }
+
+  function concluirReservaProfessor() {
+    setModalProfessorAberto(false);
+    carregarReservas(ambienteSelecionado);
   }
 
   async function criarReserva(e) {
@@ -818,6 +1163,18 @@ function TelaPrincipal({ session, perfil }) {
           onFechar={() => setModalAberto(false)}
           onConfirmar={criarReserva}
           mensagem={mensagem}
+        />
+      )}
+
+      {modalProfessorAberto && (
+        <ModalReservaProfessor
+          session={session}
+          perfil={perfil}
+          ambientes={ambientes}
+          professores={professores}
+          dataInicial={dataSelecionada}
+          onFechar={() => setModalProfessorAberto(false)}
+          onConcluido={concluirReservaProfessor}
         />
       )}
 
