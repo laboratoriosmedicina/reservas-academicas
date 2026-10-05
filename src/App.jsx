@@ -551,10 +551,10 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
         continue;
       }
 
-      const responsavelId = sala.professorAssociadoId || session.user.id;
       const linhas = ocorrencias.map((data) => ({
         ambiente_id: sala.ambienteId,
-        usuario_id: responsavelId,
+        usuario_id: session.user.id,
+        professor_associado_id: salasSel.length > 1 ? sala.professorAssociadoId || null : null,
         tipo,
         finalidade,
         data,
@@ -662,17 +662,23 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
               return (
                 <div key={s.ambienteId} style={{ display: "flex", alignItems: "center", gap: 8, background: COLORS.bg, padding: "8px 10px", fontSize: 12.5, borderRadius: 4, flexWrap: "wrap" }}>
                   <span style={{ minWidth: 150 }}>{ambiente?.nome}</span>
-                  <span style={{ color: COLORS.inkSoft, whiteSpace: "nowrap" }}>professor associado:</span>
-                  <select value={s.professorAssociadoId} onChange={(e) => setAssociado(s.ambienteId, e.target.value)} style={{ ...inputStyle, width: "auto", padding: "5px 8px", fontSize: 12.5 }}>
-                    <option value="">Você (responsável)</option>
-                    {professores.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-                  </select>
+                  {salasSel.length > 1 && (
+                    <>
+                      <span style={{ color: COLORS.inkSoft, whiteSpace: "nowrap" }}>mostrar como responsável:</span>
+                      <select value={s.professorAssociadoId} onChange={(e) => setAssociado(s.ambienteId, e.target.value)} style={{ ...inputStyle, width: "auto", padding: "5px 8px", fontSize: 12.5 }}>
+                        <option value="">Você</option>
+                        {professores.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                      </select>
+                    </>
+                  )}
                 </div>
               );
             })}
-            <div style={{ fontSize: 11, color: COLORS.inkSoft }}>
-              Ao associar um professor a uma sala, ele passa a ser o responsável por aquela reserva; as demais continuam com você.
-            </div>
+            {salasSel.length > 1 && (
+              <div style={{ fontSize: 11, color: COLORS.inkSoft }}>
+                Isso só muda o nome exibido para quem vê a reserva — ela continua sendo sua (só você pode cancelá-la).
+              </div>
+            )}
           </div>
         )}
 
