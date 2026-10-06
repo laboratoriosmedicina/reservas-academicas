@@ -388,6 +388,158 @@ function PainelUsuarios({ session }) {
   );
 }
 
+// ------------------------------------------------ Admin: períodos e disciplinas
+function PainelPeriodos() {
+  const [periodos, setPeriodos] = useState([]);
+  const [disciplinas, setDisciplinas] = useState([]);
+  const [mensagem, setMensagem] = useState("");
+  const [novoPeriodo, setNovoPeriodo] = useState("");
+  const [editandoPeriodoId, setEditandoPeriodoId] = useState(null);
+  const [nomeEdicao, setNomeEdicao] = useState("");
+  const [novaDisciplinaEm, setNovaDisciplinaEm] = useState(null); // id do período
+  const [nomeNovaDisciplina, setNomeNovaDisciplina] = useState("");
+  const [editandoDisciplinaId, setEditandoDisciplinaId] = useState(null);
+  const [nomeDisciplinaEdicao, setNomeDisciplinaEdicao] = useState("");
+
+  async function carregar() {
+    const [{ data: p, error: ep }, { data: d, error: ed }] = await Promise.all([
+      supabase.from("periodos").select("*").order("nome"),
+      supabase.from("disciplinas").select("*").order("nome"),
+    ]);
+    if (ep) setMensagem(ep.message);
+    else if (ed) setMensagem(ed.message);
+    setPeriodos(p || []);
+    setDisciplinas(d || []);
+  }
+
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  async function criarPeriodo(e) {
+    e.preventDefault();
+    if (!novoPeriodo.trim()) return;
+    const { error } = await supabase.from("periodos").insert({ nome: novoPeriodo.trim() });
+    if (error) setMensagem(error.message);
+    else {
+      setNovoPeriodo("");
+      carregar();
+    }
+  }
+
+  async function salvarEdicaoPeriodo(id) {
+    if (!nomeEdicao.trim()) return;
+    const { error } = await supabase.from("periodos").update({ nome: nomeEdicao.trim() }).eq("id", id);
+    if (error) setMensagem(error.message);
+    else {
+      setEditandoPeriodoId(null);
+      carregar();
+    }
+  }
+
+  async function removerPeriodo(id) {
+    const { error } = await supabase.from("periodos").delete().eq("id", id);
+    if (error) setMensagem(error.message);
+    else carregar();
+  }
+
+  async function criarDisciplina(periodoId) {
+    if (!nomeNovaDisciplina.trim()) return;
+    const { error } = await supabase.from("disciplinas").insert({ nome: nomeNovaDisciplina.trim(), periodo_id: periodoId });
+    if (error) setMensagem(error.message);
+    else {
+      setNomeNovaDisciplina("");
+      setNovaDisciplinaEm(null);
+      carregar();
+    }
+  }
+
+  async function salvarEdicaoDisciplina(id) {
+    if (!nomeDisciplinaEdicao.trim()) return;
+    const { error } = await supabase.from("disciplinas").update({ nome: nomeDisciplinaEdicao.trim() }).eq("id", id);
+    if (error) setMensagem(error.message);
+    else {
+      setEditandoDisciplinaId(null);
+      carregar();
+    }
+  }
+
+  async function removerDisciplina(id) {
+    const { error } = await supabase.from("disciplinas").delete().eq("id", id);
+    if (error) setMensagem(error.message);
+    else carregar();
+  }
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <h3 style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Períodos e disciplinas</h3>
+      <p style={{ fontSize: 11.5, color: COLORS.inkSoft, marginBottom: 14 }}>Usados na reserva de professor, para vincular a reserva a uma turma e disciplina.</p>
+
+      {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 12 }}>{mensagem}</p>}
+
+      <form onSubmit={criarPeriodo} style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <input style={inputStyle} placeholder="Ex.: 7º período" value={novoPeriodo} onChange={(e) => setNovoPeriodo(e.target.value)} />
+        <button type="submit" style={{ ...buttonStyle, background: COLORS.teal, whiteSpace: "nowrap" }}>+ Novo período</button>
+      </form>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {periodos.map((p) => (
+          <div key={p.id} style={{ border: `1px solid ${COLORS.line}`, borderRadius: 4, padding: "10px 12px" }}>
+            {editandoPeriodoId === p.id ? (
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <input style={inputStyle} value={nomeEdicao} onChange={(e) => setNomeEdicao(e.target.value)} />
+                <button onClick={() => salvarEdicaoPeriodo(p.id)} style={{ ...buttonStyle, background: COLORS.teal, padding: "6px 10px", fontSize: 12 }}>Salvar</button>
+                <button onClick={() => setEditandoPeriodoId(null)} style={{ background: "transparent", border: `1px solid ${COLORS.line}`, borderRadius: 4, padding: "6px 10px", fontSize: 12, cursor: "pointer" }}>Cancelar</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 500 }}>{p.nome}</div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={() => { setEditandoPeriodoId(p.id); setNomeEdicao(p.nome); }} style={{ background: "transparent", border: "none", color: COLORS.ink, fontSize: 12, cursor: "pointer" }}>Editar</button>
+                  <button onClick={() => removerPeriodo(p.id)} style={{ background: "transparent", border: "none", color: COLORS.danger, fontSize: 12, cursor: "pointer" }}>Remover</button>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, paddingLeft: 4 }}>
+              {disciplinas.filter((d) => d.periodo_id === p.id).map((d) =>
+                editandoDisciplinaId === d.id ? (
+                  <div key={d.id} style={{ display: "flex", gap: 6 }}>
+                    <input style={{ ...inputStyle, fontSize: 12.5 }} value={nomeDisciplinaEdicao} onChange={(e) => setNomeDisciplinaEdicao(e.target.value)} />
+                    <button onClick={() => salvarEdicaoDisciplina(d.id)} style={{ ...buttonStyle, background: COLORS.teal, padding: "5px 10px", fontSize: 11.5 }}>Salvar</button>
+                    <button onClick={() => setEditandoDisciplinaId(null)} style={{ background: "transparent", border: `1px solid ${COLORS.line}`, borderRadius: 4, padding: "5px 10px", fontSize: 11.5, cursor: "pointer" }}>Cancelar</button>
+                  </div>
+                ) : (
+                  <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: COLORS.bg, padding: "6px 10px", fontSize: 12.5, borderRadius: 4 }}>
+                    <span>{d.nome}</span>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <button onClick={() => { setEditandoDisciplinaId(d.id); setNomeDisciplinaEdicao(d.nome); }} style={{ background: "transparent", border: "none", color: COLORS.ink, fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}>Editar</button>
+                      <button onClick={() => removerDisciplina(d.id)} style={{ background: "transparent", border: "none", color: COLORS.danger, fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}>Remover</button>
+                    </div>
+                  </div>
+                ),
+              )}
+
+              {novaDisciplinaEm === p.id ? (
+                <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                  <input style={{ ...inputStyle, fontSize: 12.5 }} placeholder="Ex.: Imunologia" value={nomeNovaDisciplina} onChange={(e) => setNomeNovaDisciplina(e.target.value)} />
+                  <button onClick={() => criarDisciplina(p.id)} style={{ ...buttonStyle, background: COLORS.teal, padding: "5px 10px", fontSize: 11.5 }}>Salvar</button>
+                  <button onClick={() => setNovaDisciplinaEm(null)} style={{ background: "transparent", border: `1px solid ${COLORS.line}`, borderRadius: 4, padding: "5px 10px", fontSize: 11.5, cursor: "pointer" }}>Cancelar</button>
+                </div>
+              ) : (
+                <button onClick={() => { setNovaDisciplinaEm(p.id); setNomeNovaDisciplina(""); }} style={{ alignSelf: "flex-start", background: "transparent", border: `1px dashed ${COLORS.line}`, color: COLORS.inkSoft, fontSize: 11.5, padding: "5px 10px", marginTop: 4, borderRadius: 4, cursor: "pointer" }}>
+                  + Adicionar disciplina
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        {periodos.length === 0 && <p style={{ fontSize: 12.5, color: COLORS.inkSoft }}>Nenhum período cadastrado.</p>}
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------ Modal: nova reserva
 function ModalNovaReserva({ ambiente, valores, onMudar, onFechar, onConfirmar, mensagem }) {
   return (
@@ -470,8 +622,22 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
   const [mensagem, setMensagem] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState(null); // { sucesso, totalReservas, bloqueadas: [{nome, motivo}] }
+  const [periodos, setPeriodos] = useState([]);
+  const [disciplinas, setDisciplinas] = useState([]);
+  const [periodoId, setPeriodoId] = useState("");
+  const [disciplinaId, setDisciplinaId] = useState("");
 
   const ehAdmin = perfil?.cargo === "admin";
+  const disciplinasDoPeriodo = disciplinas.filter((d) => d.periodo_id === periodoId);
+
+  useEffect(() => {
+    Promise.all([supabase.from("periodos").select("*").order("nome"), supabase.from("disciplinas").select("*").order("nome")]).then(
+      ([{ data: p }, { data: d }]) => {
+        setPeriodos(p || []);
+        setDisciplinas(d || []);
+      },
+    );
+  }, []);
 
   function alternarSala(id) {
     setSalasSel((prev) => (prev.some((s) => s.ambienteId === id) ? prev.filter((s) => s.ambienteId !== id) : [...prev, { ambienteId: id, professorAssociadoId: "" }]));
@@ -489,6 +655,10 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
 
     if (salasSel.length === 0) {
       setMensagem("Selecione ao menos uma sala.");
+      return;
+    }
+    if (tipo === "professor" && (!periodoId || !disciplinaId)) {
+      setMensagem("Selecione o período da turma e a disciplina.");
       return;
     }
     if (dataFim < dataInicio) {
@@ -551,12 +721,17 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
         continue;
       }
 
+      const disciplinaEscolhida = tipo === "professor" ? disciplinas.find((d) => d.id === disciplinaId) : null;
+      const periodoEscolhido = tipo === "professor" ? periodos.find((p) => p.id === periodoId) : null;
+      const finalidadeFinal = tipo === "professor" ? disciplinaEscolhida?.nome || finalidade : finalidade;
+
       const linhas = ocorrencias.map((data) => ({
         ambiente_id: sala.ambienteId,
         usuario_id: session.user.id,
         professor_associado_id: salasSel.length > 1 ? sala.professorAssociadoId || null : null,
         tipo,
-        finalidade,
+        finalidade: finalidadeFinal,
+        periodo_nome: periodoEscolhido?.nome || null,
         data,
         hora_inicio: horaInicio,
         hora_fim: horaFim,
@@ -631,9 +806,26 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
           </Campo>
         </div>
 
-        <Campo label="Finalidade">
-          <input style={inputStyle} value={finalidade} onChange={(e) => setFinalidade(e.target.value)} required />
-        </Campo>
+        {tipo === "professor" ? (
+          <div style={{ display: "flex", gap: 12 }}>
+            <Campo label="Período da turma" style={{ flex: 1 }}>
+              <select style={inputStyle} value={periodoId} onChange={(e) => { setPeriodoId(e.target.value); setDisciplinaId(""); }} required>
+                <option value="">Selecione</option>
+                {periodos.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+              </select>
+            </Campo>
+            <Campo label="Disciplina" style={{ flex: 1 }}>
+              <select style={inputStyle} value={disciplinaId} onChange={(e) => setDisciplinaId(e.target.value)} disabled={!periodoId} required>
+                <option value="">{periodoId ? "Selecione" : "Escolha um período"}</option>
+                {disciplinasDoPeriodo.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
+              </select>
+            </Campo>
+          </div>
+        ) : (
+          <Campo label="Finalidade">
+            <input style={inputStyle} value={finalidade} onChange={(e) => setFinalidade(e.target.value)} required />
+          </Campo>
+        )}
 
         <Campo label="Salas (uma ou mais)">
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -754,7 +946,7 @@ function ModalDetalheReserva({ reserva, ambiente, podeCancelar, onFechar, onCanc
         <div style={{ ...fonteTitulo, fontSize: 17, fontWeight: 600 }}>{TIPO_LABEL[reserva.tipo]}</div>
         <span style={{ fontSize: 11, padding: "3px 8px", background: TIPO_SOFT[reserva.tipo], color: TIPO_COLOR[reserva.tipo], fontWeight: 600, borderRadius: 3 }}>{ambiente?.nome}</span>
       </div>
-      <div style={{ fontSize: 13.5, color: COLORS.ink, marginBottom: 14 }}>{reserva.finalidade}</div>
+      <div style={{ fontSize: 13.5, color: COLORS.ink, marginBottom: 14 }}>{reserva.finalidade}{reserva.periodo_nome ? ` · ${reserva.periodo_nome}` : ""}</div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13, marginBottom: 14 }}>
         {reserva.tipo === "grupo_estudos" && !reserva.responsavel_nome ? (
@@ -1048,6 +1240,9 @@ function TelaPrincipal({ session, perfil }) {
                 <button onClick={() => setAba("usuarios")} style={{ background: aba === "usuarios" ? "#fff" : "transparent", color: aba === "usuarios" ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
                   Usuários
                 </button>
+                <button onClick={() => setAba("periodos")} style={{ background: aba === "periodos" ? "#fff" : "transparent", color: aba === "periodos" ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
+                  Períodos
+                </button>
               </div>
             )}
             <button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
@@ -1060,6 +1255,8 @@ function TelaPrincipal({ session, perfil }) {
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 24px 64px" }}>
         {aba === "usuarios" && ehAdmin ? (
           <PainelUsuarios session={session} />
+        ) : aba === "periodos" && ehAdmin ? (
+          <PainelPeriodos />
         ) : (
           <>
             {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 16 }}>{mensagem}</p>}
