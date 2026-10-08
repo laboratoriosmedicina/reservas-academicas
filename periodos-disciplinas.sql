@@ -57,8 +57,11 @@ create policy "Só admin remove disciplinas" on public.disciplinas
 alter table public.reservas add column if not exists periodo_nome text;
 
 -- Recria a view de reservas incluindo periodo_nome (mantém a mesma privacidade
--- de material e de responsável que já estava aplicada).
-create or replace view public.reservas_visiveis
+-- de material e de responsável que já estava aplicada). Precisa apagar antes de
+-- recriar porque mudar a posição de uma coluna não é permitido com REPLACE.
+drop view if exists public.reservas_visiveis;
+
+create view public.reservas_visiveis
 with (security_invoker = true) as
 select
   r.id,

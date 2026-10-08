@@ -608,7 +608,7 @@ function ModalNovaReserva({ ambiente, valores, onMudar, onFechar, onConfirmar, m
 const DIAS_SEMANA_LABEL = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 // ------------------------------------------------ Modal: reserva do professor (múltiplas salas + recorrência)
-function ModalReservaProfessor({ session, perfil, ambientes, professores, dataInicial, onFechar, onConcluido }) {
+function ModalReservaProfessor({ session, perfil, ambientes, professores, dataInicial, diasHabilitados, onFechar, onConcluido }) {
   const [tipo, setTipo] = useState("professor");
   const [finalidade, setFinalidade] = useState("");
   const [material, setMaterial] = useState("");
@@ -616,7 +616,7 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
   const [salasSel, setSalasSel] = useState([]); // { ambienteId, professorAssociadoId }
   const [dataInicio, setDataInicio] = useState(dataInicial);
   const [dataFim, setDataFim] = useState(dataInicial);
-  const [diasSemana, setDiasSemana] = useState([diaSemanaDe(dataInicial)]);
+  const [diasSemana, setDiasSemana] = useState(diasHabilitados.includes(diaSemanaDe(dataInicial)) ? [diaSemanaDe(dataInicial)] : []);
   const [horaInicio, setHoraInicio] = useState("08:00");
   const [horaFim, setHoraFim] = useState("09:00");
   const [mensagem, setMensagem] = useState("");
@@ -885,21 +885,29 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
 
         <Campo label="Dias da semana considerados">
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {DIAS_SEMANA_LABEL.map((label, i) => (
-              <button
-                type="button"
-                key={i}
-                onClick={() => alternarDia(i)}
-                style={{
-                  padding: "6px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer",
-                  border: `1px solid ${diasSemana.includes(i) ? COLORS.professor : COLORS.line}`,
-                  background: diasSemana.includes(i) ? COLORS.professorSoft : "#fff",
-                  color: diasSemana.includes(i) ? COLORS.professor : COLORS.inkSoft,
-                }}
-              >
-                {label}
-              </button>
-            ))}
+            {DIAS_SEMANA_LABEL.map((label, i) => {
+              const habilitado = diasHabilitados.includes(i);
+              return (
+                <button
+                  type="button"
+                  key={i}
+                  disabled={!habilitado}
+                  title={habilitado ? undefined : "Dia desativado pela administração"}
+                  onClick={() => alternarDia(i)}
+                  style={{
+                    padding: "6px 10px", fontSize: 12, borderRadius: 4,
+                    cursor: habilitado ? "pointer" : "not-allowed",
+                    opacity: habilitado ? 1 : 0.35,
+                    textDecoration: habilitado ? "none" : "line-through",
+                    border: `1px solid ${diasSemana.includes(i) ? COLORS.professor : COLORS.line}`,
+                    background: diasSemana.includes(i) ? COLORS.professorSoft : "#fff",
+                    color: diasSemana.includes(i) ? COLORS.professor : COLORS.inkSoft,
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </Campo>
 
@@ -1048,6 +1056,7 @@ function GradeAgenda({ reservasDoDia, onAbrirDetalhe }) {
 function TelaPrincipal({ session, perfil }) {
   const [aba, setAba] = useState("reservas"); // "reservas" | "usuarios"
   const [categoria, setCategoria] = useState("laboratorio");
+  const [diasHabilitados, setDiasHabilitados] = useState([1, 2, 3, 4, 5]);
   const [ambientes, setAmbientes] = useState([]);
   const [ambienteSelecionado, setAmbienteSelecionado] = useState(null);
   const [dataSelecionada, setDataSelecionada] = useState(hojeISO());
@@ -1076,6 +1085,18 @@ function TelaPrincipal({ session, perfil }) {
     }
   }
 
+  async function carregarConfig() {
+    const { data, error } = await supabase.from("config_sistema").select("dias_habilitados").eq("id", 1).single();
+    if (!error && data) setDiasHabilitados(data.dias_habilitados);
+  }
+
+  async function alternarDiaHabilitado(dia) {
+    const novo = diasHabilitados.includes(dia) ? diasHabilitados.filter((d) => d !== dia) : [...diasHabilitados, dia].sort();
+    setDiasHabilitados(novo);
+    const { error } = await supabase.from("config_sistema").update({ dias_habilitados: novo }).eq("id", 1);
+    if (error) setMensagem(error.message);
+  }
+
   async function carregarReservas(ambienteId) {
     if (!ambienteId) return;
     const { data, error } = await supabase
@@ -1093,6 +1114,7 @@ function TelaPrincipal({ session, perfil }) {
 
   useEffect(() => {
     carregarAmbientes().finally(() => setCarregando(false));
+    carregarConfig();
   }, []);
 
   useEffect(() => {
@@ -1135,6 +1157,11 @@ function TelaPrincipal({ session, perfil }) {
     e.preventDefault();
     setMensagem("");
     setAviso("");
+
+    if (!diasHabilitados.includes(diaSemanaDe(novaReserva.data))) {
+      setMensagem(`A administração desativou reservas aos ${DIAS_SEMANA_LABEL[diaSemanaDe(novaReserva.data)]}.`);
+      return;
+    }
 
     const limite = validarLimites({
       cargo: perfil?.cargo,
@@ -1304,6 +1331,28 @@ function TelaPrincipal({ session, perfil }) {
 
                 {ehAdmin && (
                   <div style={{ marginTop: 24 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, marginBottom: 4 }}>Dias habilitados para reserva</div>
+                    <div style={{ display: "flex", gap: 4, marginBottom: 20, flexWrap: "wrap" }}>
+                      {DIAS_SEMANA_LABEL.map((label, i) => {
+                        const habilitado = diasHabilitados.includes(i);
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => alternarDiaHabilitado(i)}
+                            title={habilitado ? "Clique para desativar" : "Clique para ativar"}
+                            style={{
+                              padding: "6px 8px", fontSize: 11, fontWeight: 600, borderRadius: 4, cursor: "pointer", minWidth: 36,
+                              background: habilitado ? COLORS.teal : COLORS.dangerSoft,
+                              color: habilitado ? "#fff" : COLORS.danger,
+                              border: `1px solid ${habilitado ? COLORS.teal : COLORS.danger}`,
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, marginBottom: 8 }}>Novo ambiente (admin)</div>
                     <form onSubmit={criarAmbiente}>
                       <Campo label="Nome">
@@ -1376,6 +1425,7 @@ function TelaPrincipal({ session, perfil }) {
           ambientes={ambientes}
           professores={professores}
           dataInicial={dataSelecionada}
+          diasHabilitados={diasHabilitados}
           onFechar={() => setModalProfessorAberto(false)}
           onConcluido={concluirReservaProfessor}
         />
