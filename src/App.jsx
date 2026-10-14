@@ -72,14 +72,36 @@ function Modal({ largura = 460, onFechar, children }) {
   );
 }
 
-// Procura uma reserva que se sobreponha ao horário pedido (mesma data).
+// Prioridade entre os tipos de reserva (maior vence).
+export const PRIORIDADE = { professor: 3, monitoria: 2, grupo_estudos: 1 };
+
+// Procura uma reserva CONFIRMADA que impede o horário pedido: sobrepõe no tempo e tem prioridade
+// igual ou maior que a do tipo pedido. (Sobreposição com prioridade menor não bloqueia: a nova
+// reserva fica pendente de aprovação. Reservas pendentes não ocupam o horário.)
 // Horários "HH:MM" comparam certo como texto. Reservas seguidas (fim = início) não colidem.
-export function acharConflito(reservas, data, horaInicio, horaFim) {
+export function acharConflito(reservas, data, horaInicio, horaFim, tipo) {
   return (
     reservas.find(
-      (r) => r.data === data && r.hora_inicio.slice(0, 5) < horaFim && horaInicio < r.hora_fim.slice(0, 5),
+      (r) =>
+        r.data === data &&
+        r.status !== "pendente" &&
+        (PRIORIDADE[r.tipo] || 0) >= (PRIORIDADE[tipo] || 0) &&
+        r.hora_inicio.slice(0, 5) < horaFim &&
+        horaInicio < r.hora_fim.slice(0, 5),
     ) || null
   );
+}
+
+// Conta quantas reservas confirmadas, de prioridade MENOR, ficariam no caminho (a nova ficaria pendente).
+export function contarMenoresNoCaminho(reservas, data, horaInicio, horaFim, tipo) {
+  return reservas.filter(
+    (r) =>
+      r.data === data &&
+      r.status !== "pendente" &&
+      (PRIORIDADE[r.tipo] || 0) < (PRIORIDADE[tipo] || 0) &&
+      r.hora_inicio.slice(0, 5) < horaFim &&
+      horaInicio < r.hora_fim.slice(0, 5),
+  ).length;
 }
 
 function validarLimites({ cargo, tipo, antecedenciaHoras, data, horaInicio, horaFim, agora = new Date() }) {
@@ -130,12 +152,11 @@ export function gerarOcorrencias(dataInicio, dataFim, diasSemana) {
   return datas;
 }
 
-// Procura, na lista de ocorrências (em ordem), a primeira que colide com alguma reserva existente.
-export function acharPrimeiroConflito(reservasExistentes, ocorrencias, horaInicio, horaFim) {
+// Procura, na lista de ocorrências (em ordem), a primeira que colide com uma reserva confirmada de
+// prioridade igual ou maior (as de prioridade menor deixam a nova reserva pendente, não bloqueiam).
+export function acharPrimeiroConflito(reservasExistentes, ocorrencias, horaInicio, horaFim, tipo) {
   for (const data of ocorrencias) {
-    const r = reservasExistentes.find(
-      (x) => x.data === data && x.hora_inicio.slice(0, 5) < horaFim && horaInicio < x.hora_fim.slice(0, 5),
-    );
+    const r = acharConflito(reservasExistentes, data, horaInicio, horaFim, tipo);
     if (r) return { data, reserva: r };
   }
   return null;
@@ -388,6 +409,125 @@ function PainelUsuarios({ session }) {
   );
 }
 
+// ------------------------------------------------ Admin: aprovações pendentes
+function PainelAprovacoes({ ambientes, aoMudar }) {
+  const [pendentes, setPendentes] = useState([]);
+  const [confirmadas, setConfirmadas] = useState([]);
+  const [nomes, setNomes] = useState({});
+  const [mensagem, setMensagem] = useState("");
+  const [ocupado, setOcupado] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+
+  async function carregar() {
+    const { data: pend, error } = await supabase.from("reservas").select("*").eq("status", "pendente").order("data").order("hora_inicio");
+    if (error) {
+      setMensagem(error.message);
+      setCarregando(false);
+      return;
+    }
+    setPendentes(pend || []);
+
+    if ((pend || []).length > 0) {
+      const ids = [...new Set(pend.map((r) => r.ambiente_id))];
+      const datas = pend.map((r) => r.data).sort();
+      const { data: conf } = await supabase
+        .from("reservas")
+        .select("*")
+        .eq("status", "confirmada")
+        .in("ambiente_id", ids)
+        .gte("data", datas[0])
+        .lte("data", datas[datas.length - 1]);
+      setConfirmadas(conf || []);
+    } else {
+      setConfirmadas([]);
+    }
+
+    const { data: perfis } = await supabase.from("profiles").select("id, nome");
+    setNomes(Object.fromEntries((perfis || []).map((p) => [p.id, p.nome])));
+    setCarregando(false);
+  }
+
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  function noCaminho(p) {
+    return confirmadas.filter(
+      (c) =>
+        c.ambiente_id === p.ambiente_id &&
+        c.data === p.data &&
+        c.hora_inicio.slice(0, 5) < p.hora_fim.slice(0, 5) &&
+        p.hora_inicio.slice(0, 5) < c.hora_fim.slice(0, 5),
+    );
+  }
+
+  async function decidir(id, acao) {
+    setMensagem("");
+    setOcupado(id);
+    const { error } = await supabase.rpc(acao === "aprovar" ? "aprovar_reserva" : "recusar_reserva", { p_id: id });
+    setOcupado(null);
+    if (error) setMensagem(error.message);
+    await carregar();
+    aoMudar();
+  }
+
+  if (carregando) return <p style={{ fontSize: 13 }}>Carregando…</p>;
+
+  return (
+    <div style={{ maxWidth: 680 }}>
+      <h3 style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Aprovações pendentes</h3>
+      <p style={{ fontSize: 11.5, color: COLORS.inkSoft, marginBottom: 14 }}>
+        Reservas de maior prioridade que colidiram com reservas de menor prioridade. Aprovar confirma esta reserva e cancela as menores (os donos são avisados); recusar descarta esta solicitação.
+      </p>
+
+      {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 12 }}>{mensagem}</p>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {pendentes.map((p) => {
+          const ambiente = ambientes.find((a) => a.id === p.ambiente_id);
+          const doCaminho = noCaminho(p);
+          const menores = doCaminho.filter((c) => (PRIORIDADE[c.tipo] || 0) < (PRIORIDADE[p.tipo] || 0));
+          const bloqueia = doCaminho.some((c) => (PRIORIDADE[c.tipo] || 0) >= (PRIORIDADE[p.tipo] || 0));
+          return (
+            <div key={p.id} style={{ background: COLORS.professorSoft, border: `1px solid ${COLORS.professor}`, borderRadius: 4, padding: "10px 14px" }}>
+              <div style={{ fontSize: 13.5 }}>
+                {ambiente?.nome || "Ambiente removido"} — {nomes[p.usuario_id] || "—"} ({TIPO_LABEL[p.tipo]})
+              </div>
+              <div style={{ fontSize: 12, color: COLORS.inkSoft, marginBottom: 6 }}>
+                {p.finalidade}{p.periodo_nome ? ` · ${p.periodo_nome}` : ""} · {dataBR(p.data)}, {p.hora_inicio.slice(0, 5)}–{p.hora_fim.slice(0, 5)}
+              </div>
+              <div style={{ fontSize: 12, marginBottom: 8, color: bloqueia ? COLORS.danger : COLORS.ink }}>
+                {bloqueia
+                  ? "Já existe uma reserva de prioridade igual ou maior confirmada neste horário — só é possível recusar."
+                  : menores.length > 0
+                    ? `Se aprovada, cancela: ${menores.map((c) => `${TIPO_LABEL[c.tipo]} de ${nomes[c.usuario_id] || "—"} (${c.hora_inicio.slice(0, 5)}–${c.hora_fim.slice(0, 5)})`).join(", ")}`
+                    : "O horário já foi liberado — aprovar apenas confirma esta reserva."}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  disabled={ocupado === p.id || bloqueia}
+                  onClick={() => decidir(p.id, "aprovar")}
+                  style={{ ...buttonStyle, background: bloqueia ? COLORS.line : COLORS.teal, padding: "7px 14px", fontSize: 12.5, cursor: bloqueia ? "not-allowed" : "pointer" }}
+                >
+                  Aprovar
+                </button>
+                <button
+                  disabled={ocupado === p.id}
+                  onClick={() => decidir(p.id, "recusar")}
+                  style={{ background: "transparent", border: `1px solid ${COLORS.danger}`, color: COLORS.danger, borderRadius: 4, padding: "7px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+                >
+                  Recusar
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {pendentes.length === 0 && <p style={{ fontSize: 12.5, color: COLORS.inkSoft }}>Nenhuma aprovação pendente no momento.</p>}
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------ Admin: períodos e disciplinas
 function PainelPeriodos() {
   const [periodos, setPeriodos] = useState([]);
@@ -541,7 +681,8 @@ function PainelPeriodos() {
 }
 
 // ------------------------------------------------ Modal: nova reserva
-function ModalNovaReserva({ ambiente, valores, onMudar, onFechar, onConfirmar, mensagem }) {
+function ModalNovaReserva({ ambiente, cargo, valores, onMudar, onFechar, onConfirmar, mensagem }) {
+  const tiposPermitidos = cargo === "monitor" ? ["monitoria", "grupo_estudos"] : ["grupo_estudos"];
   return (
     <Modal onFechar={onFechar}>
       <div style={{ ...fonteTitulo, fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Nova reserva</div>
@@ -552,9 +693,7 @@ function ModalNovaReserva({ ambiente, valores, onMudar, onFechar, onConfirmar, m
       <form onSubmit={onConfirmar}>
         <Campo label="Tipo">
           <select style={inputStyle} value={valores.tipo} onChange={(e) => onMudar({ ...valores, tipo: e.target.value })}>
-            <option value="grupo_estudos">Grupo de estudos</option>
-            <option value="monitoria">Monitoria</option>
-            <option value="professor">Professor</option>
+            {tiposPermitidos.map((t) => <option key={t} value={t}>{TIPO_LABEL[t]}</option>)}
           </select>
         </Campo>
         <Campo label="Finalidade">
@@ -680,8 +819,8 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
 
     const idsAmbientes = salasSel.map((s) => s.ambienteId);
     const { data: existentes, error: erroBusca } = await supabase
-      .from("reservas")
-      .select("ambiente_id, data, hora_inicio, hora_fim, finalidade")
+      .from("reservas_visiveis")
+      .select("ambiente_id, data, hora_inicio, hora_fim, finalidade, tipo, status")
       .in("ambiente_id", idsAmbientes)
       .gte("data", dataInicio)
       .lte("data", dataFim);
@@ -693,6 +832,7 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
     }
 
     let totalSucesso = 0;
+    let totalPendentes = 0;
     const bloqueadas = [];
 
     for (const sala of salasSel) {
@@ -712,7 +852,7 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
       }
 
       const existentesDaSala = existentes.filter((r) => r.ambiente_id === sala.ambienteId);
-      const conflito = acharPrimeiroConflito(existentesDaSala, ocorrencias, horaInicio, horaFim);
+      const conflito = acharPrimeiroConflito(existentesDaSala, ocorrencias, horaInicio, horaFim, tipo);
       if (conflito) {
         bloqueadas.push({
           nome: ambiente.nome,
@@ -739,7 +879,7 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
         material: tipo === "professor" ? material || null : null,
       }));
 
-      const { error: erroInsercao } = await supabase.from("reservas").insert(linhas);
+      const { data: inseridas, error: erroInsercao } = await supabase.from("reservas").insert(linhas).select("status");
       if (erroInsercao) {
         const motivo =
           erroInsercao.code === "23P01"
@@ -748,11 +888,12 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
         bloqueadas.push({ nome: ambiente.nome, motivo });
       } else {
         totalSucesso += linhas.length;
+        totalPendentes += (inseridas || []).filter((x) => x.status === "pendente").length;
       }
     }
 
     setEnviando(false);
-    setResultado({ totalSucesso, salasOk: salasSel.length - bloqueadas.length, bloqueadas });
+    setResultado({ totalSucesso, totalPendentes, salasOk: salasSel.length - bloqueadas.length, bloqueadas });
   }
 
   if (resultado) {
@@ -761,7 +902,13 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
         <div style={{ ...fonteTitulo, fontSize: 18, fontWeight: 600, marginBottom: 14 }}>Resultado do lançamento</div>
         {resultado.totalSucesso > 0 && (
           <div style={{ fontSize: 13.5, color: COLORS.teal, marginBottom: 12 }}>
-            {resultado.salasOk} sala(s) confirmada(s), totalizando {resultado.totalSucesso} reserva(s).
+            {resultado.salasOk} sala(s) lançada(s), totalizando {resultado.totalSucesso} reserva(s)
+            {resultado.totalPendentes > 0 ? `: ${resultado.totalSucesso - resultado.totalPendentes} confirmada(s) e ${resultado.totalPendentes} aguardando aprovação.` : ", todas confirmadas."}
+          </div>
+        )}
+        {resultado.totalPendentes > 0 && (
+          <div style={{ fontSize: 12.5, background: COLORS.professorSoft, color: COLORS.professor, padding: "8px 10px", borderRadius: 4, marginBottom: 12 }}>
+            ⏳ As reservas pendentes colidem com reservas de menor prioridade (aluno/monitor). Só passam a valer quando a administração aprovar — e, ao aprovar, as reservas menores são canceladas e seus donos avisados.
           </div>
         )}
         {resultado.bloqueadas.length > 0 && (
@@ -956,6 +1103,12 @@ function ModalDetalheReserva({ reserva, ambiente, podeCancelar, onFechar, onCanc
       </div>
       <div style={{ fontSize: 13.5, color: COLORS.ink, marginBottom: 14 }}>{reserva.finalidade}{reserva.periodo_nome ? ` · ${reserva.periodo_nome}` : ""}</div>
 
+      {reserva.status === "pendente" && (
+        <div style={{ background: COLORS.professorSoft, color: COLORS.professor, fontSize: 12, padding: "8px 10px", marginBottom: 14, borderRadius: 4 }}>
+          ⏳ Aguardando aprovação da administração. Esta reserva colide com outra de menor prioridade e só passa a valer se for aprovada.
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13, marginBottom: 14 }}>
         {reserva.tipo === "grupo_estudos" && !reserva.responsavel_nome ? (
           <div style={{ color: COLORS.inkSoft, fontStyle: "italic" }}>O responsável por este grupo de estudos é visível apenas para a administração.</div>
@@ -1010,6 +1163,8 @@ function GradeAgenda({ reservasDoDia, onAbrirDetalhe }) {
   const altura = 720;
   const totalMin = (horaTopo - horaBase) * 60;
 
+  const sobrepoe = (a, b) => a.hora_inicio.slice(0, 5) < b.hora_fim.slice(0, 5) && b.hora_inicio.slice(0, 5) < a.hora_fim.slice(0, 5);
+
   return (
     <div style={{ display: "flex", border: `1px solid ${COLORS.line}`, borderRadius: 4, overflow: "hidden" }}>
       <div style={{ width: 46, borderRight: `1px solid ${COLORS.line}`, position: "relative", height: altura, flexShrink: 0 }}>
@@ -1025,21 +1180,28 @@ function GradeAgenda({ reservasDoDia, onAbrirDetalhe }) {
           const fim = r.hora_fim.slice(0, 5);
           const top = ((toMinutosHHMM(ini) - horaBase * 60) / totalMin) * altura;
           const height = ((toMinutosHHMM(fim) - toMinutosHHMM(ini)) / totalMin) * altura;
+          const pendente = r.status === "pendente";
+          // Quando uma reserva pendente disputa o horário de outra, as duas ficam lado a lado
+          const disputando = reservasDoDia.some((o) => o.id !== r.id && (o.status === "pendente") !== pendente && sobrepoe(o, r));
+          const esquerda = disputando && pendente ? "50%" : 8;
+          const direita = disputando && !pendente ? "52%" : 8;
           return (
             <button
               key={r.id}
               onClick={() => onAbrirDetalhe(r)}
-              title="Clique para ver os detalhes"
+              title={pendente ? "Aguardando aprovação da administração" : "Clique para ver os detalhes"}
               style={{
-                position: "absolute", top, height: Math.max(height, 40), left: 8, right: 8,
-                background: TIPO_SOFT[r.tipo], borderLeft: `3px solid ${TIPO_COLOR[r.tipo]}`,
+                position: "absolute", top, height: Math.max(height, 40), left: esquerda, right: direita,
+                background: TIPO_SOFT[r.tipo],
                 padding: "4px 10px", fontSize: 12, overflow: "hidden", textAlign: "left",
-                border: "none", borderLeftWidth: 3, borderLeftStyle: "solid", borderLeftColor: TIPO_COLOR[r.tipo],
+                border: pendente ? `1px dashed ${TIPO_COLOR[r.tipo]}` : "none",
+                borderLeftWidth: 3, borderLeftStyle: "solid", borderLeftColor: TIPO_COLOR[r.tipo],
+                opacity: pendente ? 0.8 : 1,
                 cursor: "pointer", display: "flex", flexDirection: "column", justifyContent: "center", gap: 1, borderRadius: 2,
               }}
             >
               <div style={{ fontWeight: 600, color: TIPO_COLOR[r.tipo], whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden", fontSize: 11 }}>
-                {ini}–{fim} · {TIPO_LABEL[r.tipo]}
+                {ini}–{fim} · {TIPO_LABEL[r.tipo]}{pendente ? " · ⏳ pendente" : ""}
               </div>
               <div style={{ color: COLORS.inkSoft, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
                 {r.finalidade}{r.responsavel_nome ? ` — ${r.responsavel_nome}` : ""}
@@ -1054,7 +1216,9 @@ function GradeAgenda({ reservasDoDia, onAbrirDetalhe }) {
 
 // ------------------------------------------------ Tela principal
 function TelaPrincipal({ session, perfil }) {
-  const [aba, setAba] = useState("reservas"); // "reservas" | "usuarios"
+  const [aba, setAba] = useState("reservas"); // "reservas" | "usuarios" | "periodos" | "aprovacoes"
+  const [notificacoes, setNotificacoes] = useState([]);
+  const [totalPendentes, setTotalPendentes] = useState(0);
   const [categoria, setCategoria] = useState("laboratorio");
   const [diasHabilitados, setDiasHabilitados] = useState([1, 2, 3, 4, 5]);
   const [ambientes, setAmbientes] = useState([]);
@@ -1083,6 +1247,21 @@ function TelaPrincipal({ session, perfil }) {
       const primeiro = data.find((a) => a.tipo === categoria) || data[0];
       if (primeiro) setAmbienteSelecionado(primeiro.id);
     }
+  }
+
+  async function carregarNotificacoes() {
+    const { data } = await supabase.from("notificacoes").select("*").eq("lida", false).order("created_at", { ascending: false });
+    setNotificacoes(data || []);
+  }
+
+  async function dispensarNotificacao(id) {
+    setNotificacoes((prev) => prev.filter((n) => n.id !== id));
+    await supabase.from("notificacoes").update({ lida: true }).eq("id", id);
+  }
+
+  async function carregarTotalPendentes() {
+    const { count } = await supabase.from("reservas").select("id", { count: "exact", head: true }).eq("status", "pendente");
+    setTotalPendentes(count || 0);
   }
 
   async function carregarConfig() {
@@ -1115,7 +1294,17 @@ function TelaPrincipal({ session, perfil }) {
   useEffect(() => {
     carregarAmbientes().finally(() => setCarregando(false));
     carregarConfig();
-  }, []);
+    carregarNotificacoes();
+    const timer = setInterval(() => {
+      carregarNotificacoes();
+      if (perfil?.cargo === "admin") carregarTotalPendentes();
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [perfil?.cargo]);
+
+  useEffect(() => {
+    if (perfil?.cargo === "admin") carregarTotalPendentes();
+  }, [perfil?.cargo]);
 
   useEffect(() => {
     if (perfil?.cargo === "professor" || perfil?.cargo === "admin") {
@@ -1177,7 +1366,7 @@ function TelaPrincipal({ session, perfil }) {
     }
 
     // Checagem rápida com o que já está na tela (o banco é quem garante de verdade, logo abaixo)
-    const conflito = acharConflito(reservas, novaReserva.data, novaReserva.horaInicio, novaReserva.horaFim);
+    const conflito = acharConflito(reservas, novaReserva.data, novaReserva.horaInicio, novaReserva.horaFim, novaReserva.tipo);
     if (conflito) {
       setMensagem(
         `Esse horário já está ocupado em ${ambiente?.nome || "este ambiente"}: ${dataBR(conflito.data)}, das ${conflito.hora_inicio.slice(0, 5)} às ${conflito.hora_fim.slice(0, 5)} (${conflito.finalidade}). Escolha outro horário.`,
@@ -1185,17 +1374,20 @@ function TelaPrincipal({ session, perfil }) {
       return;
     }
 
-    const { error } = await supabase.from("reservas").insert({
-      ambiente_id: ambienteSelecionado,
-      usuario_id: session.user.id,
-      tipo: novaReserva.tipo,
-      finalidade: novaReserva.finalidade,
-      data: novaReserva.data,
-      hora_inicio: novaReserva.horaInicio,
-      hora_fim: novaReserva.horaFim,
-      qtd_pessoas: novaReserva.qtdPessoas || null,
-      material: novaReserva.tipo === "professor" ? novaReserva.material || null : null,
-    });
+    const { data: criadas, error } = await supabase
+      .from("reservas")
+      .insert({
+        ambiente_id: ambienteSelecionado,
+        usuario_id: session.user.id,
+        tipo: novaReserva.tipo,
+        finalidade: novaReserva.finalidade,
+        data: novaReserva.data,
+        hora_inicio: novaReserva.horaInicio,
+        hora_fim: novaReserva.horaFim,
+        qtd_pessoas: novaReserva.qtdPessoas || null,
+        material: novaReserva.tipo === "professor" ? novaReserva.material || null : null,
+      })
+      .select("status");
     if (error) {
       if (error.code === "23P01") {
         setMensagem("Esse horário acabou de ser reservado por outra pessoa. Veja a lista atualizada e escolha outro horário.");
@@ -1206,7 +1398,12 @@ function TelaPrincipal({ session, perfil }) {
         setMensagem(error.message);
       }
     } else {
-      setAviso("Reserva criada.");
+      const ficouPendente = criadas?.[0]?.status === "pendente";
+      setAviso(
+        ficouPendente
+          ? "Seu horário colide com uma reserva de menor prioridade, então sua reserva foi enviada para aprovação da administração. Ela só passa a valer se for aprovada."
+          : "Reserva criada.",
+      );
       setModalAberto(false);
       setDataSelecionada(novaReserva.data);
       carregarReservas(ambienteSelecionado);
@@ -1270,6 +1467,9 @@ function TelaPrincipal({ session, perfil }) {
                 <button onClick={() => setAba("periodos")} style={{ background: aba === "periodos" ? "#fff" : "transparent", color: aba === "periodos" ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
                   Períodos
                 </button>
+                <button onClick={() => { setAba("aprovacoes"); carregarTotalPendentes(); }} style={{ background: aba === "aprovacoes" ? "#fff" : "transparent", color: aba === "aprovacoes" ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
+                  Aprovações{totalPendentes > 0 ? ` (${totalPendentes})` : ""}
+                </button>
               </div>
             )}
             <button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
@@ -1280,10 +1480,28 @@ function TelaPrincipal({ session, perfil }) {
       </header>
 
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 24px 64px" }}>
+        {notificacoes.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+            {notificacoes.map((n) => (
+              <div key={n.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: COLORS.professorSoft, border: `1px solid ${COLORS.professor}`, color: COLORS.ink, fontSize: 13, padding: "10px 14px", borderRadius: 4 }}>
+                <span>🔔 {n.mensagem}</span>
+                <button onClick={() => dispensarNotificacao(n.id)} style={{ background: "transparent", border: "none", color: COLORS.professor, fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                  Dispensar
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {aba === "usuarios" && ehAdmin ? (
           <PainelUsuarios session={session} />
         ) : aba === "periodos" && ehAdmin ? (
           <PainelPeriodos />
+        ) : aba === "aprovacoes" && ehAdmin ? (
+          <PainelAprovacoes
+            ambientes={ambientes}
+            aoMudar={() => { carregarTotalPendentes(); carregarReservas(ambienteSelecionado); }}
+          />
         ) : (
           <>
             {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 16 }}>{mensagem}</p>}
@@ -1410,6 +1628,7 @@ function TelaPrincipal({ session, perfil }) {
       {modalAberto && (
         <ModalNovaReserva
           ambiente={ambiente}
+          cargo={perfil?.cargo}
           valores={novaReserva}
           onMudar={setNovaReserva}
           onFechar={() => setModalAberto(false)}
@@ -1435,7 +1654,7 @@ function TelaPrincipal({ session, perfil }) {
         <ModalDetalheReserva
           reserva={detalhe}
           ambiente={ambiente}
-          podeCancelar={detalhe.usuario_id === session.user.id || ehAdmin}
+          podeCancelar={detalhe.eh_minha || ehAdmin}
           onFechar={() => setDetalhe(null)}
           onCancelar={cancelarReserva}
         />
