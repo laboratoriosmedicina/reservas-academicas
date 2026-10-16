@@ -162,6 +162,14 @@ export function acharPrimeiroConflito(reservasExistentes, ocorrencias, horaInici
   return null;
 }
 
+// Grupo de estudos em laboratório exige no mínimo 3 participantes (vale para aluno e monitor).
+export function erroMinimoParticipantes({ cargo, tipoReserva, tipoAmbiente, qtdPessoas }) {
+  if ((cargo === "aluno" || cargo === "monitor") && tipoReserva === "grupo_estudos" && tipoAmbiente === "laboratorio" && Number(qtdPessoas) < 3) {
+    return "Grupo de estudos em laboratório exige no mínimo 3 participantes.";
+  }
+  return null;
+}
+
 function toMinutosHHMM(hhmm) {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
@@ -681,7 +689,7 @@ function PainelPeriodos() {
 }
 
 // ------------------------------------------------ Modal: nova reserva
-function ModalNovaReserva({ ambiente, cargo, valores, onMudar, onFechar, onConfirmar, mensagem }) {
+function ModalNovaReserva({ ambiente, cargo, diasHabilitados, valores, onMudar, onFechar, onConfirmar, mensagem }) {
   const tiposPermitidos = cargo === "monitor" ? ["monitoria", "grupo_estudos"] : ["grupo_estudos"];
   return (
     <Modal onFechar={onFechar}>
@@ -699,9 +707,48 @@ function ModalNovaReserva({ ambiente, cargo, valores, onMudar, onFechar, onConfi
         <Campo label="Finalidade">
           <input style={inputStyle} value={valores.finalidade} onChange={(e) => onMudar({ ...valores, finalidade: e.target.value })} required />
         </Campo>
-        <Campo label="Data">
+        <Campo label={valores.tipo === "monitoria" ? "Data inicial" : "Data"}>
           <input type="date" style={inputStyle} value={valores.data} onChange={(e) => onMudar({ ...valores, data: e.target.value })} required />
         </Campo>
+
+        {valores.tipo === "monitoria" && (
+          <>
+            <Campo label="Repetir até (opcional)" hint="Deixe em branco para uma reserva única; preencha para repetir toda semana nos dias marcados.">
+              <input type="date" min={valores.data} style={inputStyle} value={valores.dataFimRecorrencia} onChange={(e) => onMudar({ ...valores, dataFimRecorrencia: e.target.value })} />
+            </Campo>
+            {valores.dataFimRecorrencia && valores.dataFimRecorrencia > valores.data && (
+              <Campo label="Dias da semana considerados">
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {DIAS_SEMANA_LABEL.map((label, i) => {
+                    const habilitado = diasHabilitados.includes(i);
+                    const marcado = valores.diasSemana.includes(i);
+                    return (
+                      <button
+                        type="button"
+                        key={i}
+                        disabled={!habilitado}
+                        title={habilitado ? undefined : "Dia desativado pela administração"}
+                        onClick={() => onMudar({ ...valores, diasSemana: marcado ? valores.diasSemana.filter((d) => d !== i) : [...valores.diasSemana, i].sort() })}
+                        style={{
+                          padding: "6px 10px", fontSize: 12, borderRadius: 4,
+                          cursor: habilitado ? "pointer" : "not-allowed",
+                          opacity: habilitado ? 1 : 0.35,
+                          textDecoration: habilitado ? "none" : "line-through",
+                          border: `1px solid ${marcado ? COLORS.monitor : COLORS.line}`,
+                          background: marcado ? COLORS.monitorSoft : "#fff",
+                          color: marcado ? COLORS.monitor : COLORS.inkSoft,
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Campo>
+            )}
+          </>
+        )}
+
         <div style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}>
             <Campo label="Início">
@@ -714,7 +761,10 @@ function ModalNovaReserva({ ambiente, cargo, valores, onMudar, onFechar, onConfi
             </Campo>
           </div>
         </div>
-        <Campo label="Quantidade de pessoas">
+        <Campo
+          label="Quantidade de pessoas"
+          hint={valores.tipo === "grupo_estudos" ? (ambiente?.tipo === "laboratorio" ? "Mínimo de 3 participantes para laboratório." : "Sem mínimo para sala de tutoria.") : undefined}
+        >
           <input type="number" min={1} style={inputStyle} value={valores.qtdPessoas} onChange={(e) => onMudar({ ...valores, qtdPessoas: e.target.value })} />
         </Campo>
 
@@ -1233,7 +1283,7 @@ function TelaPrincipal({ session, perfil }) {
   const [detalhe, setDetalhe] = useState(null);
   const [professores, setProfessores] = useState([]);
 
-  const [novaReserva, setNovaReserva] = useState({ tipo: "grupo_estudos", finalidade: "", data: hojeISO(), horaInicio: "", horaFim: "", qtdPessoas: 1, material: "" });
+  const [novaReserva, setNovaReserva] = useState({ tipo: "grupo_estudos", finalidade: "", data: hojeISO(), horaInicio: "", horaFim: "", qtdPessoas: 1, material: "", dataFimRecorrencia: "", diasSemana: [] });
   const [novoAmbiente, setNovoAmbiente] = useState({ nome: "", tipo: "laboratorio", capacidade: 10, antecedenciaHoras: 48 });
 
   async function carregarAmbientes() {
@@ -1332,7 +1382,11 @@ function TelaPrincipal({ session, perfil }) {
     if (perfil?.cargo === "professor" || perfil?.cargo === "admin") {
       setModalProfessorAberto(true);
     } else {
-      setNovaReserva({ tipo: "grupo_estudos", finalidade: "", data: dataSelecionada, horaInicio: "", horaFim: "", qtdPessoas: 1, material: "" });
+      setNovaReserva({
+        tipo: "grupo_estudos", finalidade: "", data: dataSelecionada, horaInicio: "", horaFim: "", qtdPessoas: 1, material: "",
+        dataFimRecorrencia: "",
+        diasSemana: diasHabilitados.includes(diaSemanaDe(dataSelecionada)) ? [diaSemanaDe(dataSelecionada)] : [],
+      });
       setModalAberto(true);
     }
   }
@@ -1347,8 +1401,36 @@ function TelaPrincipal({ session, perfil }) {
     setMensagem("");
     setAviso("");
 
-    if (!diasHabilitados.includes(diaSemanaDe(novaReserva.data))) {
-      setMensagem(`A administração desativou reservas aos ${DIAS_SEMANA_LABEL[diaSemanaDe(novaReserva.data)]}.`);
+    const ehMonitoria = novaReserva.tipo === "monitoria";
+    if (ehMonitoria && novaReserva.dataFimRecorrencia && novaReserva.dataFimRecorrencia < novaReserva.data) {
+      setMensagem("A data de término não pode ser antes da data inicial.");
+      return;
+    }
+    const ehSerie = ehMonitoria && !!novaReserva.dataFimRecorrencia && novaReserva.dataFimRecorrencia > novaReserva.data;
+    if (ehSerie && novaReserva.diasSemana.length === 0) {
+      setMensagem("Selecione ao menos um dia da semana para a recorrência.");
+      return;
+    }
+    const ocorrencias = ehSerie ? gerarOcorrencias(novaReserva.data, novaReserva.dataFimRecorrencia, novaReserva.diasSemana) : [novaReserva.data];
+    if (ocorrencias.length === 0) {
+      setMensagem("Nenhuma data válida nesse intervalo com os dias da semana selecionados.");
+      return;
+    }
+
+    const diaDesativado = ocorrencias.find((d) => !diasHabilitados.includes(diaSemanaDe(d)));
+    if (diaDesativado) {
+      setMensagem(`A administração desativou reservas aos ${DIAS_SEMANA_LABEL[diaSemanaDe(diaDesativado)]}.`);
+      return;
+    }
+
+    const erroMin = erroMinimoParticipantes({
+      cargo: perfil?.cargo,
+      tipoReserva: novaReserva.tipo,
+      tipoAmbiente: ambiente?.tipo,
+      qtdPessoas: novaReserva.qtdPessoas,
+    });
+    if (erroMin) {
+      setMensagem(erroMin);
       return;
     }
 
@@ -1356,7 +1438,7 @@ function TelaPrincipal({ session, perfil }) {
       cargo: perfil?.cargo,
       tipo: ambiente?.tipo,
       antecedenciaHoras: Number(ambiente?.antecedencia_horas) || 0,
-      data: novaReserva.data,
+      data: ocorrencias[0],
       horaInicio: novaReserva.horaInicio,
       horaFim: novaReserva.horaFim,
     });
@@ -1366,28 +1448,27 @@ function TelaPrincipal({ session, perfil }) {
     }
 
     // Checagem rápida com o que já está na tela (o banco é quem garante de verdade, logo abaixo)
-    const conflito = acharConflito(reservas, novaReserva.data, novaReserva.horaInicio, novaReserva.horaFim, novaReserva.tipo);
+    const conflito = acharPrimeiroConflito(reservas, ocorrencias, novaReserva.horaInicio, novaReserva.horaFim, novaReserva.tipo);
     if (conflito) {
       setMensagem(
-        `Esse horário já está ocupado em ${ambiente?.nome || "este ambiente"}: ${dataBR(conflito.data)}, das ${conflito.hora_inicio.slice(0, 5)} às ${conflito.hora_fim.slice(0, 5)} (${conflito.finalidade}). Escolha outro horário.`,
+        `Esse horário já está ocupado em ${ambiente?.nome || "este ambiente"}: ${dataBR(conflito.data)}, das ${conflito.reserva.hora_inicio.slice(0, 5)} às ${conflito.reserva.hora_fim.slice(0, 5)} (${conflito.reserva.finalidade}). ${ehSerie ? "Nenhuma data da série foi reservada." : "Escolha outro horário."}`,
       );
       return;
     }
 
-    const { data: criadas, error } = await supabase
-      .from("reservas")
-      .insert({
-        ambiente_id: ambienteSelecionado,
-        usuario_id: session.user.id,
-        tipo: novaReserva.tipo,
-        finalidade: novaReserva.finalidade,
-        data: novaReserva.data,
-        hora_inicio: novaReserva.horaInicio,
-        hora_fim: novaReserva.horaFim,
-        qtd_pessoas: novaReserva.qtdPessoas || null,
-        material: novaReserva.tipo === "professor" ? novaReserva.material || null : null,
-      })
-      .select("status");
+    const linhas = ocorrencias.map((data) => ({
+      ambiente_id: ambienteSelecionado,
+      usuario_id: session.user.id,
+      tipo: novaReserva.tipo,
+      finalidade: novaReserva.finalidade,
+      data,
+      hora_inicio: novaReserva.horaInicio,
+      hora_fim: novaReserva.horaFim,
+      qtd_pessoas: novaReserva.qtdPessoas || null,
+      material: novaReserva.tipo === "professor" ? novaReserva.material || null : null,
+    }));
+
+    const { data: criadas, error } = await supabase.from("reservas").insert(linhas).select("status");
     if (error) {
       if (error.code === "23P01") {
         setMensagem("Esse horário acabou de ser reservado por outra pessoa. Veja a lista atualizada e escolha outro horário.");
@@ -1398,12 +1479,18 @@ function TelaPrincipal({ session, perfil }) {
         setMensagem(error.message);
       }
     } else {
-      const ficouPendente = criadas?.[0]?.status === "pendente";
-      setAviso(
-        ficouPendente
-          ? "Seu horário colide com uma reserva de menor prioridade, então sua reserva foi enviada para aprovação da administração. Ela só passa a valer se for aprovada."
-          : "Reserva criada.",
-      );
+      const pendentes = (criadas || []).filter((x) => x.status === "pendente").length;
+      if (linhas.length === 1) {
+        setAviso(
+          pendentes > 0
+            ? "Seu horário colide com uma reserva de menor prioridade, então sua reserva foi enviada para aprovação da administração. Ela só passa a valer se for aprovada."
+            : "Reserva criada.",
+        );
+      } else {
+        setAviso(
+          `${linhas.length} reservas criadas${pendentes > 0 ? `, sendo ${pendentes} aguardando aprovação da administração (colidem com reservas de menor prioridade)` : ""}.`,
+        );
+      }
       setModalAberto(false);
       setDataSelecionada(novaReserva.data);
       carregarReservas(ambienteSelecionado);
@@ -1629,6 +1716,7 @@ function TelaPrincipal({ session, perfil }) {
         <ModalNovaReserva
           ambiente={ambiente}
           cargo={perfil?.cargo}
+          diasHabilitados={diasHabilitados}
           valores={novaReserva}
           onMudar={setNovaReserva}
           onFechar={() => setModalAberto(false)}
