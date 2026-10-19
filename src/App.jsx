@@ -162,6 +162,29 @@ export function acharPrimeiroConflito(reservasExistentes, ocorrencias, horaInici
   return null;
 }
 
+// Uma série (recorrência) não pode ter datas demais: protege contra um ano digitado errado.
+export const MAX_OCORRENCIAS = 120;
+
+export function erroSerieGrande(qtd) {
+  return qtd > MAX_OCORRENCIAS
+    ? `Essa recorrência teria ${qtd} datas e o máximo é ${MAX_OCORRENCIAS}. Reduza o período (confira se o ano da data final está certo).`
+    : null;
+}
+
+// Traduz os erros técnicos do banco para mensagens que a pessoa entende.
+export function traduzirErroBanco(error) {
+  if (error.code === "23P01") {
+    return "Esse horário acabou de ser reservado por outra pessoa. Veja a lista atualizada e escolha outro horário.";
+  }
+  if (error.code === "23514") {
+    const m = error.message || "";
+    if (m.includes("reservas_horario_valido")) return "O horário final precisa ser depois do inicial.";
+    if (m.includes("qtd_pessoas")) return "A quantidade de pessoas precisa ser maior que zero.";
+    if (m.includes("tamanho")) return "Algum texto está longo demais (finalidade até 200 caracteres, material até 2000).";
+  }
+  return error.message;
+}
+
 // Grupo de estudos em laboratório exige no mínimo 3 participantes (vale para aluno e monitor).
 export function erroMinimoParticipantes({ cargo, tipoReserva, tipoAmbiente, qtdPessoas }) {
   if ((cargo === "aluno" || cargo === "monitor") && tipoReserva === "grupo_estudos" && tipoAmbiente === "laboratorio" && Number(qtdPessoas) < 3) {
@@ -705,7 +728,7 @@ function ModalNovaReserva({ ambiente, cargo, diasHabilitados, valores, onMudar, 
           </select>
         </Campo>
         <Campo label="Finalidade">
-          <input style={inputStyle} value={valores.finalidade} onChange={(e) => onMudar({ ...valores, finalidade: e.target.value })} required />
+          <input style={inputStyle} value={valores.finalidade} maxLength={200} onChange={(e) => onMudar({ ...valores, finalidade: e.target.value })} required />
         </Campo>
         <Campo label={valores.tipo === "monitoria" ? "Data inicial" : "Data"}>
           <input type="date" style={inputStyle} value={valores.data} onChange={(e) => onMudar({ ...valores, data: e.target.value })} required />
@@ -770,7 +793,7 @@ function ModalNovaReserva({ ambiente, cargo, diasHabilitados, valores, onMudar, 
 
         {valores.tipo === "professor" && (
           <Campo label="Material necessário" hint="Visível apenas para você e para a administração.">
-            <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 60 }} value={valores.material} onChange={(e) => onMudar({ ...valores, material: e.target.value })} placeholder="Ex.: manequim de simulação, kit de suturas, projetor…" />
+            <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 60 }} value={valores.material} maxLength={2000} onChange={(e) => onMudar({ ...valores, material: e.target.value })} placeholder="Ex.: manequim de simulação, kit de suturas, projetor…" />
           </Campo>
         )}
 
@@ -860,6 +883,11 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
     }
     const dias = diasSemana.length > 0 ? diasSemana : [diaSemanaDe(dataInicio)];
     const ocorrencias = gerarOcorrencias(dataInicio, dataFim, dias);
+    const erroGrande = erroSerieGrande(ocorrencias.length);
+    if (erroGrande) {
+      setMensagem(erroGrande);
+      return;
+    }
     if (ocorrencias.length === 0) {
       setMensagem("Nenhuma data válida nesse intervalo com os dias da semana selecionados.");
       return;
@@ -934,7 +962,7 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
         const motivo =
           erroInsercao.code === "23P01"
             ? "alguém reservou um desses horários enquanto você preenchia o formulário"
-            : erroInsercao.message;
+            : traduzirErroBanco(erroInsercao);
         bloqueadas.push({ nome: ambiente.nome, motivo });
       } else {
         totalSucesso += linhas.length;
@@ -1020,7 +1048,7 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
           </div>
         ) : (
           <Campo label="Finalidade">
-            <input style={inputStyle} value={finalidade} onChange={(e) => setFinalidade(e.target.value)} required />
+            <input style={inputStyle} value={finalidade} maxLength={200} onChange={(e) => setFinalidade(e.target.value)} required />
           </Campo>
         )}
 
@@ -1119,7 +1147,7 @@ function ModalReservaProfessor({ session, perfil, ambientes, professores, dataIn
 
         {tipo === "professor" && (
           <Campo label="Material necessário" hint="Visível apenas para você e para a administração.">
-            <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 60 }} value={material} onChange={(e) => setMaterial(e.target.value)} placeholder="Ex.: manequim de simulação, kit de suturas, projetor…" />
+            <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 60 }} value={material} maxLength={2000} onChange={(e) => setMaterial(e.target.value)} placeholder="Ex.: manequim de simulação, kit de suturas, projetor…" />
           </Campo>
         )}
 
@@ -1412,6 +1440,11 @@ function TelaPrincipal({ session, perfil }) {
       return;
     }
     const ocorrencias = ehSerie ? gerarOcorrencias(novaReserva.data, novaReserva.dataFimRecorrencia, novaReserva.diasSemana) : [novaReserva.data];
+    const erroGrande = erroSerieGrande(ocorrencias.length);
+    if (erroGrande) {
+      setMensagem(erroGrande);
+      return;
+    }
     if (ocorrencias.length === 0) {
       setMensagem("Nenhuma data válida nesse intervalo com os dias da semana selecionados.");
       return;
@@ -1470,14 +1503,8 @@ function TelaPrincipal({ session, perfil }) {
 
     const { data: criadas, error } = await supabase.from("reservas").insert(linhas).select("status");
     if (error) {
-      if (error.code === "23P01") {
-        setMensagem("Esse horário acabou de ser reservado por outra pessoa. Veja a lista atualizada e escolha outro horário.");
-        carregarReservas(ambienteSelecionado);
-      } else if (error.code === "23514") {
-        setMensagem("O horário final precisa ser depois do inicial.");
-      } else {
-        setMensagem(error.message);
-      }
+      setMensagem(traduzirErroBanco(error));
+      if (error.code === "23P01") carregarReservas(ambienteSelecionado);
     } else {
       const pendentes = (criadas || []).filter((x) => x.status === "pendente").length;
       if (linhas.length === 1) {
