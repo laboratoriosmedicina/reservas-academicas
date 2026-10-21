@@ -440,6 +440,375 @@ function PainelUsuarios({ session }) {
   );
 }
 
+// ------------------------------------------------ Admin: edição dos ambientes
+const FORM_AMBIENTE_VAZIO = { nome: "", tipo: "laboratorio", capacidade: 10, antecedenciaHoras: 48, regras: "" };
+
+function FormAmbiente({ inicial, rotuloSalvar, onSalvar, onCancelar }) {
+  const [v, setV] = useState(inicial);
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function enviar(e) {
+    e.preventDefault();
+    setErro("");
+    if (!v.nome.trim()) {
+      setErro("Informe o nome do ambiente.");
+      return;
+    }
+    if (Number(v.capacidade) < 1) {
+      setErro("A capacidade precisa ser de pelo menos 1 pessoa.");
+      return;
+    }
+    if (Number(v.antecedenciaHoras) < 0) {
+      setErro("A antecedência não pode ser negativa.");
+      return;
+    }
+    setSalvando(true);
+    const mensagem = await onSalvar(v);
+    setSalvando(false);
+    if (mensagem) setErro(mensagem);
+  }
+
+  return (
+    <form onSubmit={enviar} style={{ background: COLORS.tealSoft, border: `1px solid ${COLORS.teal}`, borderRadius: 4, padding: "12px 14px", marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Campo label="Nome" style={{ flex: 2, minWidth: 180 }}>
+          <input style={inputStyle} value={v.nome} maxLength={100} onChange={(e) => setV({ ...v, nome: e.target.value })} required />
+        </Campo>
+        <Campo label="Tipo" style={{ flex: 1, minWidth: 140 }}>
+          <select style={inputStyle} value={v.tipo} onChange={(e) => setV({ ...v, tipo: e.target.value })}>
+            <option value="laboratorio">Laboratório</option>
+            <option value="sala_tutoria">Sala de tutoria</option>
+          </select>
+        </Campo>
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Campo label="Capacidade (pessoas)" style={{ flex: 1, minWidth: 140 }}>
+          <input type="number" min={1} style={inputStyle} value={v.capacidade} onChange={(e) => setV({ ...v, capacidade: e.target.value })} />
+        </Campo>
+        <Campo label="Antecedência mínima (horas)" hint="Ex.: 48 para laboratório, 0.5 para tutoria." style={{ flex: 1, minWidth: 160 }}>
+          <input type="number" min={0} step="0.5" style={inputStyle} value={v.antecedenciaHoras} onChange={(e) => setV({ ...v, antecedenciaHoras: e.target.value })} />
+        </Campo>
+      </div>
+      <Campo label="Regras de uso" hint="Aparecem para todos no detalhe de cada reserva deste ambiente.">
+        <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 70 }} value={v.regras} maxLength={2000} onChange={(e) => setV({ ...v, regras: e.target.value })} placeholder="Ex.: Uso obrigatório de jaleco. Não é permitido consumir alimentos." />
+      </Campo>
+      {erro && <p style={{ fontSize: 12.5, color: COLORS.danger, marginBottom: 8 }}>{erro}</p>}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <button type="button" onClick={onCancelar} style={{ background: "transparent", border: `1px solid ${COLORS.line}`, borderRadius: 4, padding: "7px 14px", fontSize: 12.5, cursor: "pointer" }}>Cancelar</button>
+        <button type="submit" disabled={salvando} style={{ ...buttonStyle, background: COLORS.teal, padding: "7px 16px", fontSize: 12.5 }}>{salvando ? "Salvando…" : rotuloSalvar}</button>
+      </div>
+    </form>
+  );
+}
+
+function PainelAmbientes({ ambientes, diasHabilitados, onAlternarDia, aoMudar }) {
+  const [criando, setCriando] = useState(false);
+  const [editandoId, setEditandoId] = useState(null);
+  const [mensagem, setMensagem] = useState("");
+
+  function traduzir(error) {
+    if (error.code === "23505") return "Já existe um ambiente com esse nome.";
+    if (error.code === "23514") return "Valores inválidos: confira capacidade, antecedência e o tamanho dos textos.";
+    return error.message;
+  }
+
+  function paraBanco(v) {
+    return {
+      nome: v.nome.trim(),
+      tipo: v.tipo,
+      capacidade: Number(v.capacidade),
+      antecedencia_horas: Number(v.antecedenciaHoras),
+      regras: v.regras.trim() || null,
+    };
+  }
+
+  async function criar(v) {
+    const { error } = await supabase.from("ambientes").insert(paraBanco(v));
+    if (error) return traduzir(error);
+    setCriando(false);
+    setMensagem("");
+    await aoMudar();
+    return null;
+  }
+
+  async function salvarEdicao(id, v) {
+    const { error } = await supabase.from("ambientes").update(paraBanco(v)).eq("id", id);
+    if (error) return traduzir(error);
+    setEditandoId(null);
+    setMensagem("");
+    await aoMudar();
+    return null;
+  }
+
+  async function remover(a) {
+    setMensagem("");
+    const { count, error: erroContagem } = await supabase.from("reservas").select("id", { count: "exact", head: true }).eq("ambiente_id", a.id);
+    if (erroContagem) {
+      setMensagem(erroContagem.message);
+      return;
+    }
+    if (count > 0) {
+      setMensagem(`"${a.nome}" tem ${count} reserva(s) cadastrada(s) e não pode ser removido. Cancele as reservas primeiro, na aba Reservas.`);
+      return;
+    }
+    if (!window.confirm(`Remover o ambiente "${a.nome}"?`)) return;
+    const { error } = await supabase.from("ambientes").delete().eq("id", a.id);
+    if (error) setMensagem(error.message);
+    else await aoMudar();
+  }
+
+  const inicialDe = (a) => ({
+    nome: a.nome,
+    tipo: a.tipo,
+    capacidade: a.capacidade,
+    antecedenciaHoras: a.antecedencia_horas,
+    regras: a.regras || "",
+  });
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <h3 style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Dias habilitados para reserva</h3>
+      <p style={{ fontSize: 11.5, color: COLORS.inkSoft, marginBottom: 8 }}>Dias desativados não podem ser escolhidos em nenhuma reserva, de nenhum ambiente.</p>
+      <div style={{ display: "flex", gap: 6, marginBottom: 28, flexWrap: "wrap" }}>
+        {DIAS_SEMANA_LABEL.map((label, i) => {
+          const habilitado = diasHabilitados.includes(i);
+          return (
+            <button
+              key={i}
+              onClick={() => onAlternarDia(i)}
+              title={habilitado ? "Clique para desativar" : "Clique para ativar"}
+              style={{
+                padding: "8px 12px", fontSize: 12, fontWeight: 600, borderRadius: 4, cursor: "pointer", minWidth: 64,
+                background: habilitado ? COLORS.tealSoft : COLORS.dangerSoft,
+                color: habilitado ? COLORS.teal : COLORS.danger,
+                border: `1px solid ${habilitado ? COLORS.teal : COLORS.danger}`,
+              }}
+            >
+              {label}
+              <div style={{ fontSize: 10, fontWeight: 500, marginTop: 2 }}>{habilitado ? "Ativo" : "Desativado"}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <h3 style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: 0.3, margin: 0 }}>Ambientes ({ambientes.length})</h3>
+        {!criando && (
+          <button onClick={() => { setCriando(true); setEditandoId(null); }} style={{ ...buttonStyle, background: COLORS.teal, padding: "7px 12px", fontSize: 12.5 }}>+ Novo ambiente</button>
+        )}
+      </div>
+
+      {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 10 }}>{mensagem}</p>}
+
+      {criando && <FormAmbiente inicial={FORM_AMBIENTE_VAZIO} rotuloSalvar="Adicionar ambiente" onSalvar={criar} onCancelar={() => setCriando(false)} />}
+
+      {Object.entries(TIPO_AMBIENTE_LABEL_PLURAL).map(([tipo, rotulo]) => (
+        <div key={tipo} style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, marginBottom: 6 }}>{rotulo}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {ambientes.filter((a) => a.tipo === tipo).map((a) =>
+              editandoId === a.id ? (
+                <FormAmbiente key={a.id} inicial={inicialDe(a)} rotuloSalvar="Salvar alterações" onSalvar={(v) => salvarEdicao(a.id, v)} onCancelar={() => setEditandoId(null)} />
+              ) : (
+                <div key={a.id} style={{ border: `1px solid ${COLORS.line}`, borderRadius: 4, padding: "10px 12px", background: COLORS.panel }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 500 }}>{a.nome}</div>
+                      <div style={{ fontSize: 11.5, color: COLORS.inkSoft, marginTop: 2 }}>
+                        capacidade {a.capacidade} · antecedência mínima {a.antecedencia_horas}h
+                      </div>
+                      <div style={{ fontSize: 11.5, color: COLORS.inkSoft, marginTop: 4, whiteSpace: "pre-wrap" }}>
+                        {a.regras ? `Regras: ${a.regras}` : "Sem regras de uso cadastradas."}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 10, whiteSpace: "nowrap" }}>
+                      <button onClick={() => { setEditandoId(a.id); setCriando(false); }} style={{ background: "transparent", border: "none", color: COLORS.ink, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Editar</button>
+                      <button onClick={() => remover(a)} style={{ background: "transparent", border: "none", color: COLORS.danger, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Remover</button>
+                    </div>
+                  </div>
+                </div>
+              ),
+            )}
+            {ambientes.filter((a) => a.tipo === tipo).length === 0 && <p style={{ fontSize: 12, color: COLORS.inkSoft }}>Nenhum ambiente nesta categoria.</p>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ------------------------------------------------ Admin: todas as reservas e histórico
+const EVENTO_LABEL = {
+  criacao: "Reserva criada",
+  solicitacao: "Reserva solicitada (aguardando aprovação)",
+  aprovacao: "Reserva aprovada",
+  cancelamento: "Reserva cancelada",
+  recusa: "Reserva recusada",
+};
+const EVENTO_COR = { criacao: COLORS.teal, solicitacao: COLORS.professor, aprovacao: COLORS.teal, cancelamento: COLORS.danger, recusa: COLORS.danger };
+
+function PainelReservasAdmin({ ambientes, aoMudar }) {
+  const [subAba, setSubAba] = useState("reservas"); // "reservas" | "historico"
+  const [filtros, setFiltros] = useState({ periodo: "proximas", ambienteId: "", tipo: "", status: "" });
+  const [reservas, setReservas] = useState([]);
+  const [nomes, setNomes] = useState({});
+  const [historico, setHistorico] = useState([]);
+  const [truncado, setTruncado] = useState(false);
+  const [mensagem, setMensagem] = useState("");
+  const [carregando, setCarregando] = useState(true);
+
+  async function carregarReservas() {
+    setCarregando(true);
+    setMensagem("");
+    const hoje = hojeISO();
+    let q = supabase.from("reservas").select("*");
+    if (filtros.periodo === "proximas") q = q.gte("data", hoje).order("data", { ascending: true }).order("hora_inicio", { ascending: true });
+    else if (filtros.periodo === "passadas") q = q.lt("data", hoje).order("data", { ascending: false }).order("hora_inicio", { ascending: false });
+    else q = q.order("data", { ascending: false }).order("hora_inicio", { ascending: false });
+    if (filtros.ambienteId) q = q.eq("ambiente_id", filtros.ambienteId);
+    if (filtros.tipo) q = q.eq("tipo", filtros.tipo);
+    if (filtros.status) q = q.eq("status", filtros.status);
+    const { data, error } = await q.limit(301);
+    if (error) {
+      setMensagem(error.message);
+      setCarregando(false);
+      return;
+    }
+    setTruncado((data || []).length > 300);
+    setReservas((data || []).slice(0, 300));
+    const { data: perfis } = await supabase.from("profiles").select("id, nome");
+    setNomes(Object.fromEntries((perfis || []).map((x) => [x.id, x.nome])));
+    setCarregando(false);
+  }
+
+  async function carregarHistorico() {
+    setCarregando(true);
+    setMensagem("");
+    const { data, error } = await supabase.from("historico_reservas").select("*").order("created_at", { ascending: false }).limit(150);
+    if (error) setMensagem(error.message);
+    setHistorico(data || []);
+    setCarregando(false);
+  }
+
+  useEffect(() => {
+    if (subAba === "reservas") carregarReservas();
+    else carregarHistorico();
+  }, [subAba, filtros]);
+
+  async function cancelar(r) {
+    if (!window.confirm("Cancelar esta reserva? O responsável será avisado.")) return;
+    const { error } = await supabase.from("reservas").delete().eq("id", r.id);
+    if (error) {
+      setMensagem(error.message);
+      return;
+    }
+    await carregarReservas();
+    aoMudar();
+  }
+
+  const nomeAmbiente = (id) => ambientes.find((a) => a.id === id)?.nome || "Ambiente removido";
+  const seletor = { ...inputStyle, width: "auto", padding: "7px 8px", fontSize: 12.5 };
+
+  return (
+    <div style={{ maxWidth: 820 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[["reservas", "Todas as reservas"], ["historico", "Histórico"]].map(([id, rotulo]) => (
+          <button
+            key={id}
+            onClick={() => setSubAba(id)}
+            style={{
+              padding: "8px 14px", fontSize: 12.5, fontWeight: 600, borderRadius: 4, cursor: "pointer",
+              background: subAba === id ? COLORS.teal : COLORS.panel,
+              color: subAba === id ? "#fff" : COLORS.ink,
+              border: `1px solid ${subAba === id ? COLORS.teal : COLORS.line}`,
+            }}
+          >
+            {rotulo}
+          </button>
+        ))}
+      </div>
+
+      {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 12 }}>{mensagem}</p>}
+
+      {subAba === "reservas" ? (
+        <>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+            <select style={seletor} value={filtros.periodo} onChange={(e) => setFiltros({ ...filtros, periodo: e.target.value })}>
+              <option value="proximas">Próximas (de hoje em diante)</option>
+              <option value="passadas">Já passadas</option>
+              <option value="todas">Todas</option>
+            </select>
+            <select style={seletor} value={filtros.ambienteId} onChange={(e) => setFiltros({ ...filtros, ambienteId: e.target.value })}>
+              <option value="">Todos os ambientes</option>
+              {ambientes.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
+            </select>
+            <select style={seletor} value={filtros.tipo} onChange={(e) => setFiltros({ ...filtros, tipo: e.target.value })}>
+              <option value="">Todos os tipos</option>
+              {Object.entries(TIPO_LABEL).map(([id, rotulo]) => <option key={id} value={id}>{rotulo}</option>)}
+            </select>
+            <select style={seletor} value={filtros.status} onChange={(e) => setFiltros({ ...filtros, status: e.target.value })}>
+              <option value="">Qualquer situação</option>
+              <option value="confirmada">Confirmadas</option>
+              <option value="pendente">Pendentes</option>
+            </select>
+          </div>
+
+          {carregando ? (
+            <p style={{ fontSize: 13 }}>Carregando…</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {reservas.map((r) => (
+                <div key={r.id} style={{ border: `1px solid ${COLORS.line}`, borderLeft: `3px solid ${TIPO_COLOR[r.tipo]}`, borderRadius: 4, padding: "9px 12px", background: COLORS.panel, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                  <div style={{ fontSize: 13 }}>
+                    <div>
+                      <strong>{dataBR(r.data)}</strong> · {r.hora_inicio.slice(0, 5)}–{r.hora_fim.slice(0, 5)} · {nomeAmbiente(r.ambiente_id)}
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: TIPO_COLOR[r.tipo], background: TIPO_SOFT[r.tipo], padding: "1px 7px", borderRadius: 3, marginLeft: 8 }}>{TIPO_LABEL[r.tipo]}</span>
+                      {r.status === "pendente" && (
+                        <span style={{ fontSize: 10.5, fontWeight: 600, color: COLORS.professor, background: COLORS.professorSoft, padding: "1px 7px", borderRadius: 3, marginLeft: 6 }}>⏳ pendente</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: COLORS.inkSoft, marginTop: 2 }}>
+                      {r.finalidade}{r.periodo_nome ? ` · ${r.periodo_nome}` : ""}
+                    </div>
+                    <div style={{ fontSize: 12, color: COLORS.inkSoft }}>
+                      Responsável: {nomes[r.usuario_id] || "—"}
+                      {r.professor_associado_id ? ` (exibida como ${nomes[r.professor_associado_id] || "—"})` : ""}
+                      {r.qtd_pessoas ? ` · ${r.qtd_pessoas} pessoa(s)` : ""}
+                    </div>
+                    {r.material && <div style={{ fontSize: 11.5, color: COLORS.inkSoft, marginTop: 2 }}>🔒 Material: {r.material}</div>}
+                  </div>
+                  <button onClick={() => cancelar(r)} style={{ background: "transparent", border: "none", color: COLORS.danger, fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Cancelar</button>
+                </div>
+              ))}
+              {reservas.length === 0 && <p style={{ fontSize: 12.5, color: COLORS.inkSoft }}>Nenhuma reserva com esses filtros.</p>}
+              {truncado && <p style={{ fontSize: 11.5, color: COLORS.inkSoft }}>Mostrando as primeiras 300. Use os filtros para ver as demais.</p>}
+            </div>
+          )}
+        </>
+      ) : carregando ? (
+        <p style={{ fontSize: 13 }}>Carregando…</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <p style={{ fontSize: 11.5, color: COLORS.inkSoft, marginBottom: 6 }}>Últimos 150 eventos. O histórico começou a ser registrado quando este recurso foi ativado.</p>
+          {historico.map((h) => (
+            <div key={h.id} style={{ background: COLORS.panel, border: `1px solid ${COLORS.line}`, borderLeft: `3px solid ${EVENTO_COR[h.evento] || COLORS.line}`, borderRadius: 4, padding: "8px 12px", fontSize: 12 }}>
+              <div>
+                <strong>{new Date(h.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Fortaleza" })}</strong> · {EVENTO_LABEL[h.evento] || h.evento} · {h.ambiente_nome} · {TIPO_LABEL[h.tipo] || h.tipo}
+              </div>
+              <div style={{ color: COLORS.inkSoft, marginTop: 2 }}>
+                {h.finalidade} — {h.data ? dataBR(h.data) : ""} {h.hora_inicio ? `${h.hora_inicio.slice(0, 5)}–${h.hora_fim.slice(0, 5)}` : ""} — dono: {h.dono_nome || "—"}
+                {h.autor_nome && h.autor_nome !== h.dono_nome ? ` · por: ${h.autor_nome}` : ""}
+              </div>
+            </div>
+          ))}
+          {historico.length === 0 && <p style={{ fontSize: 12.5, color: COLORS.inkSoft }}>Nenhum evento registrado ainda.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ------------------------------------------------ Admin: aprovações pendentes
 function PainelAprovacoes({ ambientes, aoMudar }) {
   const [pendentes, setPendentes] = useState([]);
@@ -1294,7 +1663,7 @@ function GradeAgenda({ reservasDoDia, onAbrirDetalhe }) {
 
 // ------------------------------------------------ Tela principal
 function TelaPrincipal({ session, perfil }) {
-  const [aba, setAba] = useState("reservas"); // "reservas" | "usuarios" | "periodos" | "aprovacoes"
+  const [aba, setAba] = useState("agenda"); // "agenda" | "reservas" | "aprovacoes" | "ambientes" | "periodos" | "usuarios"
   const [notificacoes, setNotificacoes] = useState([]);
   const [totalPendentes, setTotalPendentes] = useState(0);
   const [categoria, setCategoria] = useState("laboratorio");
@@ -1312,7 +1681,6 @@ function TelaPrincipal({ session, perfil }) {
   const [professores, setProfessores] = useState([]);
 
   const [novaReserva, setNovaReserva] = useState({ tipo: "grupo_estudos", finalidade: "", data: hojeISO(), horaInicio: "", horaFim: "", qtdPessoas: 1, material: "", dataFimRecorrencia: "", diasSemana: [] });
-  const [novoAmbiente, setNovoAmbiente] = useState({ nome: "", tipo: "laboratorio", capacidade: 10, antecedenciaHoras: 48 });
 
   async function carregarAmbientes() {
     const { data, error } = await supabase.from("ambientes").select("*").order("nome");
@@ -1321,9 +1689,9 @@ function TelaPrincipal({ session, perfil }) {
       return;
     }
     setAmbientes(data);
-    if (!ambienteSelecionado) {
+    if (!ambienteSelecionado || !data.some((a) => a.id === ambienteSelecionado)) {
       const primeiro = data.find((a) => a.tipo === categoria) || data[0];
-      if (primeiro) setAmbienteSelecionado(primeiro.id);
+      setAmbienteSelecionado(primeiro ? primeiro.id : null);
     }
   }
 
@@ -1535,23 +1903,6 @@ function TelaPrincipal({ session, perfil }) {
     }
   }
 
-  async function criarAmbiente(e) {
-    e.preventDefault();
-    setMensagem("");
-    const { error } = await supabase.from("ambientes").insert({
-      nome: novoAmbiente.nome,
-      tipo: novoAmbiente.tipo,
-      capacidade: Number(novoAmbiente.capacidade),
-      antecedencia_horas: Number(novoAmbiente.antecedenciaHoras),
-    });
-    if (error) {
-      setMensagem(error.message);
-    } else {
-      setNovoAmbiente({ nome: "", tipo: "laboratorio", capacidade: 10, antecedenciaHoras: 48 });
-      carregarAmbientes();
-    }
-  }
-
   const ambiente = ambientes.find((a) => a.id === ambienteSelecionado);
   const ehAdmin = perfil?.cargo === "admin";
   const ambientesDaCategoria = ambientes.filter((a) => a.tipo === categoria);
@@ -1571,19 +1922,23 @@ function TelaPrincipal({ session, perfil }) {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {ehAdmin && (
-              <div style={{ display: "flex", gap: 4 }}>
-                <button onClick={() => setAba("reservas")} style={{ background: aba === "reservas" ? "#fff" : "transparent", color: aba === "reservas" ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
-                  Reservas
-                </button>
-                <button onClick={() => setAba("usuarios")} style={{ background: aba === "usuarios" ? "#fff" : "transparent", color: aba === "usuarios" ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
-                  Usuários
-                </button>
-                <button onClick={() => setAba("periodos")} style={{ background: aba === "periodos" ? "#fff" : "transparent", color: aba === "periodos" ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
-                  Períodos
-                </button>
-                <button onClick={() => { setAba("aprovacoes"); carregarTotalPendentes(); }} style={{ background: aba === "aprovacoes" ? "#fff" : "transparent", color: aba === "aprovacoes" ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
-                  Aprovações{totalPendentes > 0 ? ` (${totalPendentes})` : ""}
-                </button>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {[
+                  ["agenda", "Agenda"],
+                  ["reservas", "Reservas"],
+                  ["aprovacoes", `Aprovações${totalPendentes > 0 ? ` (${totalPendentes})` : ""}`],
+                  ["ambientes", "Ambientes"],
+                  ["periodos", "Períodos"],
+                  ["usuarios", "Usuários"],
+                ].map(([id, rotulo]) => (
+                  <button
+                    key={id}
+                    onClick={() => { setAba(id); if (id === "aprovacoes") carregarTotalPendentes(); }}
+                    style={{ background: aba === id ? "#fff" : "transparent", color: aba === id ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}
+                  >
+                    {rotulo}
+                  </button>
+                ))}
               </div>
             )}
             <button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
@@ -1611,6 +1966,13 @@ function TelaPrincipal({ session, perfil }) {
           <PainelUsuarios session={session} />
         ) : aba === "periodos" && ehAdmin ? (
           <PainelPeriodos />
+        ) : aba === "ambientes" && ehAdmin ? (
+          <PainelAmbientes ambientes={ambientes} diasHabilitados={diasHabilitados} onAlternarDia={alternarDiaHabilitado} aoMudar={carregarAmbientes} />
+        ) : aba === "reservas" && ehAdmin ? (
+          <PainelReservasAdmin
+            ambientes={ambientes}
+            aoMudar={() => { carregarTotalPendentes(); carregarReservas(ambienteSelecionado); }}
+          />
         ) : aba === "aprovacoes" && ehAdmin ? (
           <PainelAprovacoes
             ambientes={ambientes}
@@ -1660,52 +2022,6 @@ function TelaPrincipal({ session, perfil }) {
                   ))}
                   {ambientesDaCategoria.length === 0 && <p style={{ fontSize: 12, color: COLORS.inkSoft }}>Nenhum ambiente nesta categoria.</p>}
                 </div>
-
-                {ehAdmin && (
-                  <div style={{ marginTop: 24 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, marginBottom: 4 }}>Dias habilitados para reserva</div>
-                    <div style={{ display: "flex", gap: 4, marginBottom: 20, flexWrap: "wrap" }}>
-                      {DIAS_SEMANA_LABEL.map((label, i) => {
-                        const habilitado = diasHabilitados.includes(i);
-                        return (
-                          <button
-                            key={i}
-                            onClick={() => alternarDiaHabilitado(i)}
-                            title={habilitado ? "Clique para desativar" : "Clique para ativar"}
-                            style={{
-                              padding: "6px 8px", fontSize: 11, fontWeight: 600, borderRadius: 4, cursor: "pointer", minWidth: 36,
-                              background: habilitado ? COLORS.teal : COLORS.dangerSoft,
-                              color: habilitado ? "#fff" : COLORS.danger,
-                              border: `1px solid ${habilitado ? COLORS.teal : COLORS.danger}`,
-                            }}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, marginBottom: 8 }}>Novo ambiente (admin)</div>
-                    <form onSubmit={criarAmbiente}>
-                      <Campo label="Nome">
-                        <input style={inputStyle} value={novoAmbiente.nome} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, nome: e.target.value })} required />
-                      </Campo>
-                      <Campo label="Tipo">
-                        <select style={inputStyle} value={novoAmbiente.tipo} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, tipo: e.target.value })}>
-                          <option value="laboratorio">Laboratório</option>
-                          <option value="sala_tutoria">Sala de tutoria</option>
-                        </select>
-                      </Campo>
-                      <Campo label="Capacidade">
-                        <input type="number" min={1} style={inputStyle} value={novoAmbiente.capacidade} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, capacidade: e.target.value })} />
-                      </Campo>
-                      <Campo label="Antecedência (horas)">
-                        <input type="number" min={0} step="0.5" style={inputStyle} value={novoAmbiente.antecedenciaHoras} onChange={(e) => setNovoAmbiente({ ...novoAmbiente, antecedenciaHoras: e.target.value })} />
-                      </Campo>
-                      <button type="submit" style={{ ...buttonStyle, width: "100%" }}>Adicionar ambiente</button>
-                    </form>
-                  </div>
-                )}
               </div>
 
               <div>
