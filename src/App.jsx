@@ -440,6 +440,154 @@ function PainelUsuarios({ session }) {
   );
 }
 
+// ------------------------------------------------ Minhas reservas (todos os cargos)
+export function ListaMinhasReservas({ reservas, ambientes, nomes, passadas, mostrarAvisoPrioridade, onCancelar, onVerNaAgenda }) {
+  const nomeAmbiente = (id) => ambientes.find((a) => a.id === id)?.nome || "Ambiente removido";
+
+  const grupos = [];
+  for (const r of reservas) {
+    const chave = r.data.slice(0, 7);
+    let g = grupos.find((x) => x.chave === chave);
+    if (!g) {
+      g = { chave, itens: [] };
+      grupos.push(g);
+    }
+    g.itens.push(r);
+  }
+  const rotuloMes = (chave) => {
+    const t = new Date(`${chave}-01T00:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  };
+
+  return (
+    <div>
+      {mostrarAvisoPrioridade && !passadas && (
+        <div style={{ background: COLORS.professorSoft, color: COLORS.professor, fontSize: 12, padding: "8px 10px", marginBottom: 14, borderRadius: 4 }}>
+          Sua reserva pode ser cancelada pela administração para dar lugar a uma reserva de professor. Se isso acontecer, você será avisado aqui no sistema.
+        </div>
+      )}
+
+      {grupos.map((g) => (
+        <div key={g.chave} style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, marginBottom: 6 }}>{rotuloMes(g.chave)}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {g.itens.map((r) => (
+              <div key={r.id} style={{ border: `1px solid ${COLORS.line}`, borderLeft: `3px solid ${TIPO_COLOR[r.tipo]}`, borderRadius: 4, padding: "10px 12px", background: COLORS.panel, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <div style={{ fontSize: 13 }}>
+                  <div>
+                    <strong>{DIAS_SEMANA_LABEL[diaSemanaDe(r.data)]}, {dataBR(r.data)}</strong> · {r.hora_inicio.slice(0, 5)}–{r.hora_fim.slice(0, 5)}
+                  </div>
+                  <div style={{ marginTop: 2 }}>
+                    {nomeAmbiente(r.ambiente_id)}
+                    <span style={{ fontSize: 10.5, fontWeight: 600, color: TIPO_COLOR[r.tipo], background: TIPO_SOFT[r.tipo], padding: "1px 7px", borderRadius: 3, marginLeft: 8 }}>{TIPO_LABEL[r.tipo]}</span>
+                    {r.status === "pendente" && (
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: COLORS.professor, background: COLORS.professorSoft, padding: "1px 7px", borderRadius: 3, marginLeft: 6 }}>⏳ Aguardando aprovação</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: COLORS.inkSoft, marginTop: 2 }}>
+                    {r.finalidade}{r.periodo_nome ? ` · ${r.periodo_nome}` : ""}
+                    {r.qtd_pessoas ? ` · ${r.qtd_pessoas} pessoa(s)` : ""}
+                    {r.professor_associado_id ? ` · exibida como ${nomes[r.professor_associado_id] || "outro professor"}` : ""}
+                  </div>
+                  {r.material && <div style={{ fontSize: 11.5, color: COLORS.inkSoft, marginTop: 2 }}>🔒 Material: {r.material}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 12, whiteSpace: "nowrap" }}>
+                  <button onClick={() => onVerNaAgenda(r)} style={{ background: "transparent", border: "none", color: COLORS.ink, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Ver na agenda</button>
+                  {!passadas && (
+                    <button onClick={() => onCancelar(r)} style={{ background: "transparent", border: "none", color: COLORS.danger, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Cancelar</button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {reservas.length === 0 && (
+        <p style={{ fontSize: 13, color: COLORS.inkSoft }}>
+          {passadas ? "Você não tem reservas passadas." : "Você não tem reservas futuras. Use a Agenda para reservar um horário."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PainelMinhasReservas({ session, perfil, ambientes, aoMudar, onVerNaAgenda }) {
+  const [passadas, setPassadas] = useState(false);
+  const [reservas, setReservas] = useState([]);
+  const [nomes, setNomes] = useState({});
+  const [mensagem, setMensagem] = useState("");
+  const [carregando, setCarregando] = useState(true);
+
+  async function carregar() {
+    setCarregando(true);
+    setMensagem("");
+    const hoje = hojeISO();
+    let q = supabase.from("reservas").select("*").eq("usuario_id", session.user.id);
+    if (passadas) q = q.lt("data", hoje).order("data", { ascending: false }).order("hora_inicio", { ascending: false }).limit(60);
+    else q = q.gte("data", hoje).order("data", { ascending: true }).order("hora_inicio", { ascending: true }).limit(300);
+    const { data, error } = await q;
+    if (error) {
+      setMensagem(error.message);
+      setCarregando(false);
+      return;
+    }
+    setReservas(data || []);
+
+    const ids = [...new Set((data || []).map((r) => r.professor_associado_id).filter(Boolean))];
+    if (ids.length > 0) {
+      const { data: perfis } = await supabase.from("profiles").select("id, nome").in("id", ids);
+      setNomes(Object.fromEntries((perfis || []).map((x) => [x.id, x.nome])));
+    }
+    setCarregando(false);
+  }
+
+  useEffect(() => {
+    carregar();
+  }, [passadas]);
+
+  async function cancelar(r) {
+    const nome = ambientes.find((a) => a.id === r.ambiente_id)?.nome || "este ambiente";
+    if (!window.confirm(`Cancelar a reserva de ${nome} em ${dataBR(r.data)}, das ${r.hora_inicio.slice(0, 5)} às ${r.hora_fim.slice(0, 5)}?`)) return;
+    const { error } = await supabase.from("reservas").delete().eq("id", r.id);
+    if (error) {
+      setMensagem(error.message);
+      return;
+    }
+    await carregar();
+    aoMudar();
+  }
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+        <h3 style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: 0.3, margin: 0 }}>
+          {passadas ? "Minhas reservas passadas" : `Minhas próximas reservas${carregando ? "" : ` (${reservas.length})`}`}
+        </h3>
+        <button onClick={() => setPassadas(!passadas)} style={{ background: "transparent", border: `1px solid ${COLORS.line}`, borderRadius: 4, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
+          {passadas ? "Ver próximas" : "Ver passadas"}
+        </button>
+      </div>
+
+      {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 12 }}>{mensagem}</p>}
+
+      {carregando ? (
+        <p style={{ fontSize: 13 }}>Carregando…</p>
+      ) : (
+        <ListaMinhasReservas
+          reservas={reservas}
+          ambientes={ambientes}
+          nomes={nomes}
+          passadas={passadas}
+          mostrarAvisoPrioridade={perfil?.cargo === "aluno" || perfil?.cargo === "monitor"}
+          onCancelar={cancelar}
+          onVerNaAgenda={onVerNaAgenda}
+        />
+      )}
+    </div>
+  );
+}
+
 // ------------------------------------------------ Admin: edição dos ambientes
 const FORM_AMBIENTE_VAZIO = { nome: "", tipo: "laboratorio", capacidade: 10, antecedenciaHoras: 48, regras: "" };
 
@@ -1663,7 +1811,7 @@ function GradeAgenda({ reservasDoDia, onAbrirDetalhe }) {
 
 // ------------------------------------------------ Tela principal
 function TelaPrincipal({ session, perfil }) {
-  const [aba, setAba] = useState("agenda"); // "agenda" | "reservas" | "aprovacoes" | "ambientes" | "periodos" | "usuarios"
+  const [aba, setAba] = useState("agenda"); // "agenda" | "minhas" | "reservas" | "aprovacoes" | "ambientes" | "periodos" | "usuarios"
   const [notificacoes, setNotificacoes] = useState([]);
   const [totalPendentes, setTotalPendentes] = useState(0);
   const [categoria, setCategoria] = useState("laboratorio");
@@ -1785,6 +1933,14 @@ function TelaPrincipal({ session, perfil }) {
       });
       setModalAberto(true);
     }
+  }
+
+  function verNaAgenda(r) {
+    const amb = ambientes.find((a) => a.id === r.ambiente_id);
+    if (amb) setCategoria(amb.tipo);
+    setAmbienteSelecionado(r.ambiente_id);
+    setDataSelecionada(r.data);
+    setAba("agenda");
   }
 
   function concluirReservaProfessor() {
@@ -1921,26 +2077,29 @@ function TelaPrincipal({ session, perfil }) {
             </p>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {ehAdmin && (
-              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                {[
-                  ["agenda", "Agenda"],
-                  ["reservas", "Reservas"],
-                  ["aprovacoes", `Aprovações${totalPendentes > 0 ? ` (${totalPendentes})` : ""}`],
-                  ["ambientes", "Ambientes"],
-                  ["periodos", "Períodos"],
-                  ["usuarios", "Usuários"],
-                ].map(([id, rotulo]) => (
-                  <button
-                    key={id}
-                    onClick={() => { setAba(id); if (id === "aprovacoes") carregarTotalPendentes(); }}
-                    style={{ background: aba === id ? "#fff" : "transparent", color: aba === id ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}
-                  >
-                    {rotulo}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {[
+                ["agenda", "Agenda"],
+                ["minhas", "Minhas reservas"],
+                ...(ehAdmin
+                  ? [
+                      ["reservas", "Todas as reservas"],
+                      ["aprovacoes", `Aprovações${totalPendentes > 0 ? ` (${totalPendentes})` : ""}`],
+                      ["ambientes", "Ambientes"],
+                      ["periodos", "Períodos"],
+                      ["usuarios", "Usuários"],
+                    ]
+                  : []),
+              ].map(([id, rotulo]) => (
+                <button
+                  key={id}
+                  onClick={() => { setAba(id); if (id === "aprovacoes") carregarTotalPendentes(); }}
+                  style={{ background: aba === id ? "#fff" : "transparent", color: aba === id ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}
+                >
+                  {rotulo}
+                </button>
+              ))}
+            </div>
             <button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
               Sair
             </button>
@@ -1966,6 +2125,14 @@ function TelaPrincipal({ session, perfil }) {
           <PainelUsuarios session={session} />
         ) : aba === "periodos" && ehAdmin ? (
           <PainelPeriodos />
+        ) : aba === "minhas" ? (
+          <PainelMinhasReservas
+            session={session}
+            perfil={perfil}
+            ambientes={ambientes}
+            aoMudar={() => carregarReservas(ambienteSelecionado)}
+            onVerNaAgenda={verNaAgenda}
+          />
         ) : aba === "ambientes" && ehAdmin ? (
           <PainelAmbientes ambientes={ambientes} diasHabilitados={diasHabilitados} onAlternarDia={alternarDiaHabilitado} aoMudar={carregarAmbientes} />
         ) : aba === "reservas" && ehAdmin ? (
