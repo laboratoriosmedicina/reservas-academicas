@@ -7,6 +7,22 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
     <title>Portal de Reservas Acadêmicas</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      button { font-family: inherit; }
+      input, select, textarea { font-family: inherit; }
+
+      /* Telas estreitas (celular): empilha as colunas e deixa as abas rolarem de lado */
+      @media (max-width: 760px) {
+        .grid-agenda, .grid-usuarios { grid-template-columns: 1fr !important; }
+        .cabecalho-topo { flex-direction: column !important; align-items: flex-start !important; }
+        .cabecalho-usuario { text-align: left !important; }
+        .abas-nav { overflow-x: auto; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; }
+        .abas-nav button { white-space: nowrap; }
+        .conteudo-app { padding-left: 16px !important; padding-right: 16px !important; }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

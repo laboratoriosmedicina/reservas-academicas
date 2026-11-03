@@ -3,18 +3,23 @@ import { supabase, HASH_INICIAL } from "./supabaseClient";
 
 // ---------------------------------------------------------------- Identidade visual
 const COLORS = {
-  ink: "#1B2430",
-  inkSoft: "#5B6470",
-  bg: "#EFF1EA",
+  bg: "#F2F6F5",
   panel: "#FFFFFF",
-  line: "#D6DAD2",
-  teal: "#2F6F6B",
-  tealSoft: "#E4EFEE",
-  professor: "#8A5A20",
-  professorSoft: "#FBF1DC",
-  monitor: "#6B4FA0",
-  monitorSoft: "#EEE8F7",
-  danger: "#B23A48",
+  ink: "#0B1F24",
+  inkSoft: "#586E6D",
+  line: "#DAE4E2",
+  navy: "#071A21",
+  navySoft: "#102C34",
+  teal: "#0E8C82",
+  tealBright: "#1FD8C4",
+  tealSoft: "#E1F3F0",
+  professor: "#C9782E",
+  professorSoft: "#F8EADA",
+  monitor: "#4C8C5A",
+  monitorSoft: "#E5F0E6",
+  aluno: "#3C6E96",
+  alunoSoft: "#E3ECF2",
+  danger: "#A6402F",
   dangerSoft: "#F7E4E0",
 };
 
@@ -22,8 +27,8 @@ const CARGO_LABEL = { aluno: "Aluno", monitor: "Aluno monitor", professor: "Prof
 const TIPO_AMBIENTE_LABEL = { laboratorio: "Laboratório", sala_tutoria: "Sala de tutoria" };
 const TIPO_AMBIENTE_LABEL_PLURAL = { laboratorio: "Laboratórios", sala_tutoria: "Salas de tutoria" };
 const TIPO_LABEL = { grupo_estudos: "Grupo de estudos", monitoria: "Monitoria", professor: "Professor" };
-const TIPO_COLOR = { grupo_estudos: COLORS.teal, monitoria: COLORS.monitor, professor: COLORS.professor };
-const TIPO_SOFT = { grupo_estudos: COLORS.tealSoft, monitoria: COLORS.monitorSoft, professor: COLORS.professorSoft };
+const TIPO_COLOR = { grupo_estudos: COLORS.aluno, monitoria: COLORS.monitor, professor: COLORS.professor };
+const TIPO_SOFT = { grupo_estudos: COLORS.alunoSoft, monitoria: COLORS.monitorSoft, professor: COLORS.professorSoft };
 
 const inputStyle = {
   width: "100%",
@@ -36,7 +41,7 @@ const inputStyle = {
 };
 
 const buttonStyle = {
-  background: COLORS.ink,
+  background: COLORS.teal,
   color: "#fff",
   border: "none",
   borderRadius: 4,
@@ -47,6 +52,29 @@ const buttonStyle = {
 };
 
 const fonteTitulo = { fontFamily: "'Poppins', sans-serif" };
+
+// Versões para as telas escuras (login e definir senha)
+const inputEscuro = {
+  width: "100%",
+  padding: "10px 12px",
+  border: "1px solid rgba(255,255,255,0.25)",
+  borderRadius: 4,
+  fontSize: 14,
+  boxSizing: "border-box",
+  background: "rgba(255,255,255,0.06)",
+  color: "#fff",
+};
+
+function CampoEscuro({ label, children }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14, fontSize: 12, color: "rgba(255,255,255,0.65)" }}>
+      {label}
+      {children}
+    </label>
+  );
+}
+
+const FUNDO_ESCURO = "linear-gradient(180deg, rgba(4,14,19,0.86), rgba(4,14,19,0.93)), url(/fundo.jpg) center / cover no-repeat";
 
 function Campo({ label, hint, children, style }) {
   return (
@@ -235,41 +263,42 @@ function TelaAutenticacao({ avisoInicial }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: COLORS.ink, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
-      <div style={{ maxWidth: 380, width: "100%", margin: 20, padding: "32px 28px", background: "#fff", borderRadius: 6 }}>
-        <h1 style={{ ...fonteTitulo, fontSize: 19, marginBottom: 4, color: COLORS.ink }}>Portal de Reservas Acadêmicas</h1>
-        <p style={{ fontSize: 12, color: COLORS.inkSoft, marginBottom: 20 }}>
+    <div style={{ minHeight: "100vh", background: FUNDO_ESCURO, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", padding: 24 }}>
+      <div style={{ maxWidth: 420, width: "100%", background: "rgba(7,26,33,0.72)", border: "1px solid rgba(31,216,196,0.25)", backdropFilter: "blur(6px)", padding: "34px 32px" }}>
+        <img src="/logo.png" alt="UNIFAMETRO | IDOMED" style={{ height: 72, marginBottom: 22, maxWidth: "100%", objectFit: "contain", objectPosition: "left" }} />
+        <h1 style={{ ...fonteTitulo, fontSize: 19, marginBottom: 4, color: "#fff" }}>Portal de Reservas Acadêmicas</h1>
+        <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.6)", marginBottom: 24 }}>
           {modo === "entrar" ? "Entre com o e-mail e a senha que você definiu pelo convite." : "Informe seu e-mail para receber um link de definição de senha."}
         </p>
 
         <form onSubmit={modo === "entrar" ? entrar : enviarLinkDeSenha}>
-          <Campo label="E-mail">
-            <input type="email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </Campo>
+          <CampoEscuro label="E-mail">
+            <input type="email" style={inputEscuro} value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </CampoEscuro>
           {modo === "entrar" && (
-            <Campo label="Senha">
-              <input type="password" style={inputStyle} value={senha} onChange={(e) => setSenha(e.target.value)} required />
-            </Campo>
+            <CampoEscuro label="Senha">
+              <input type="password" style={inputEscuro} value={senha} onChange={(e) => setSenha(e.target.value)} required />
+            </CampoEscuro>
           )}
 
-          {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 12 }}>{mensagem}</p>}
+          {mensagem && <p style={{ fontSize: 13, color: "#FF9C8C", marginBottom: 12 }}>{mensagem}</p>}
 
-          <button type="submit" disabled={carregando} style={{ ...buttonStyle, width: "100%" }}>
+          <button type="submit" disabled={carregando} style={{ ...buttonStyle, width: "100%", background: COLORS.tealBright, color: COLORS.navy }}>
             {carregando ? "Aguarde…" : modo === "entrar" ? "Entrar" : "Enviar link"}
           </button>
         </form>
 
-        <p style={{ fontSize: 12, color: COLORS.inkSoft, marginTop: 16, textAlign: "center" }}>
+        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 16, textAlign: "center" }}>
           {modo === "entrar" ? (
             <>
-              <button onClick={() => { setModo("esqueci"); setMensagem(""); }} style={{ background: "none", border: "none", color: COLORS.ink, textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>
+              <button onClick={() => { setModo("esqueci"); setMensagem(""); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.85)", textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>
                 Esqueci minha senha / convite expirou
               </button>
               <br />
               Não tem acesso? Peça um convite à administração.
             </>
           ) : (
-            <button onClick={() => { setModo("entrar"); setMensagem(""); }} style={{ background: "none", border: "none", color: COLORS.ink, textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>
+            <button onClick={() => { setModo("entrar"); setMensagem(""); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.85)", textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>
               Voltar para o login
             </button>
           )}
@@ -309,19 +338,20 @@ function TelaDefinirSenha({ onConcluido }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: COLORS.ink, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
-      <div style={{ maxWidth: 380, width: "100%", margin: 20, padding: "32px 28px", background: "#fff", borderRadius: 6 }}>
-        <h1 style={{ ...fonteTitulo, fontSize: 19, marginBottom: 4, color: COLORS.ink }}>Defina sua senha</h1>
-        <p style={{ fontSize: 12, color: COLORS.inkSoft, marginBottom: 20 }}>Escolha a senha que você vai usar para entrar no portal.</p>
+    <div style={{ minHeight: "100vh", background: FUNDO_ESCURO, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", padding: 24 }}>
+      <div style={{ maxWidth: 420, width: "100%", background: "rgba(7,26,33,0.72)", border: "1px solid rgba(31,216,196,0.25)", backdropFilter: "blur(6px)", padding: "34px 32px" }}>
+        <img src="/logo.png" alt="UNIFAMETRO | IDOMED" style={{ height: 72, marginBottom: 22, maxWidth: "100%", objectFit: "contain", objectPosition: "left" }} />
+        <h1 style={{ ...fonteTitulo, fontSize: 19, marginBottom: 4, color: "#fff" }}>Defina sua senha</h1>
+        <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.6)", marginBottom: 24 }}>Escolha a senha que você vai usar para entrar no portal.</p>
         <form onSubmit={salvar}>
-          <Campo label="Nova senha (mínimo 8 caracteres)">
-            <input type="password" style={inputStyle} value={senha} onChange={(e) => setSenha(e.target.value)} required />
-          </Campo>
-          <Campo label="Confirmar senha">
-            <input type="password" style={inputStyle} value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} required />
-          </Campo>
-          {erro && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 12 }}>{erro}</p>}
-          <button type="submit" disabled={carregando} style={{ ...buttonStyle, width: "100%" }}>
+          <CampoEscuro label="Nova senha (mínimo 8 caracteres)">
+            <input type="password" style={inputEscuro} value={senha} onChange={(e) => setSenha(e.target.value)} required />
+          </CampoEscuro>
+          <CampoEscuro label="Confirmar senha">
+            <input type="password" style={inputEscuro} value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} required />
+          </CampoEscuro>
+          {erro && <p style={{ fontSize: 13, color: "#FF9C8C", marginBottom: 12 }}>{erro}</p>}
+          <button type="submit" disabled={carregando} style={{ ...buttonStyle, width: "100%", background: COLORS.tealBright, color: COLORS.navy }}>
             {carregando ? "Salvando…" : "Salvar senha e entrar"}
           </button>
         </form>
@@ -386,7 +416,7 @@ function PainelUsuarios({ session }) {
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 24 }}>
+    <div className="grid-usuarios" style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 24 }}>
       <div>
         <h3 style={{ fontSize: 12, fontWeight: 600, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: 0.3 }}>Convidar usuário</h3>
         <form onSubmit={convidar}>
@@ -1764,7 +1794,7 @@ function GradeAgenda({ reservasDoDia, onAbrirDetalhe }) {
     <div style={{ display: "flex", border: `1px solid ${COLORS.line}`, borderRadius: 4, overflow: "hidden" }}>
       <div style={{ width: 46, borderRight: `1px solid ${COLORS.line}`, position: "relative", height: altura, flexShrink: 0 }}>
         {Array.from({ length: horaTopo - horaBase + 1 }, (_, i) => horaBase + i).map((h) => (
-          <div key={h} style={{ position: "absolute", top: ((h - horaBase) * 60 / totalMin) * altura - 6, right: 6, fontSize: 10.5, color: COLORS.inkSoft }}>
+          <div key={h} style={{ position: "absolute", top: Math.min(Math.max(((h - horaBase) * 60 / totalMin) * altura - 6, 2), altura - 14), right: 6, fontSize: 10.5, color: COLORS.inkSoft }}>
             {String(h).padStart(2, "0")}h
           </div>
         ))}
@@ -2068,46 +2098,58 @@ function TelaPrincipal({ session, perfil }) {
 
   return (
     <div style={{ minHeight: "100vh", background: COLORS.bg, fontFamily: "'Inter', sans-serif", color: COLORS.ink }}>
-      <header style={{ background: COLORS.ink, color: "#fff", padding: "18px 24px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <h1 style={{ ...fonteTitulo, fontSize: 18, margin: 0 }}>Portal de Reservas Acadêmicas</h1>
-            <p style={{ fontSize: 12, opacity: 0.75, margin: "4px 0 0" }}>
-              {perfil?.nome} — {CARGO_LABEL[perfil?.cargo] || perfil?.cargo}
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {[
-                ["agenda", "Agenda"],
-                ["minhas", "Minhas reservas"],
-                ...(ehAdmin
-                  ? [
-                      ["reservas", "Todas as reservas"],
-                      ["aprovacoes", `Aprovações${totalPendentes > 0 ? ` (${totalPendentes})` : ""}`],
-                      ["ambientes", "Ambientes"],
-                      ["periodos", "Períodos"],
-                      ["usuarios", "Usuários"],
-                    ]
-                  : []),
-              ].map(([id, rotulo]) => (
-                <button
-                  key={id}
-                  onClick={() => { setAba(id); if (id === "aprovacoes") carregarTotalPendentes(); }}
-                  style={{ background: aba === id ? "#fff" : "transparent", color: aba === id ? COLORS.ink : "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}
-                >
-                  {rotulo}
-                </button>
-              ))}
+      <header style={{ background: COLORS.navy, color: "#fff" }}>
+        <div className="conteudo-app" style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 24px 0" }}>
+          <div className="cabecalho-topo" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+            <div>
+              <img src="/logo.png" alt="UNIFAMETRO | IDOMED" style={{ height: 46, display: "block" }} />
+              <div style={{ fontSize: 11.5, opacity: 0.65, marginTop: 6 }}>Portal de Reservas Acadêmicas</div>
             </div>
-            <button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", padding: "7px 12px", fontSize: 12.5, borderRadius: 4, cursor: "pointer" }}>
-              Sair
-            </button>
+            <div className="cabecalho-usuario" style={{ textAlign: "right", fontSize: 13 }}>
+              <div style={{ fontWeight: 500 }}>{perfil?.nome}</div>
+              <div style={{ opacity: 0.75, fontSize: 12 }}>Cargo: {CARGO_LABEL[perfil?.cargo] || perfil?.cargo}</div>
+              <button onClick={() => supabase.auth.signOut()} style={{ marginTop: 6, background: "transparent", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", fontSize: 12, padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>
+                Sair
+              </button>
+            </div>
+          </div>
+          <div className="abas-nav" style={{ display: "flex", gap: 4, marginTop: 18, flexWrap: "wrap" }}>
+            {[
+              ["agenda", "Agenda"],
+              ["minhas", "Minhas reservas"],
+              ...(ehAdmin
+                ? [
+                    ["reservas", "Todas as reservas"],
+                    ["aprovacoes", `Aprovações${totalPendentes > 0 ? ` (${totalPendentes})` : ""}`],
+                    ["ambientes", "Ambientes"],
+                    ["periodos", "Períodos"],
+                    ["usuarios", "Usuários"],
+                  ]
+                : []),
+            ].map(([id, rotulo]) => (
+              <button
+                key={id}
+                onClick={() => { setAba(id); if (id === "aprovacoes") carregarTotalPendentes(); }}
+                style={{
+                  background: aba === id ? COLORS.bg : "transparent",
+                  color: aba === id ? COLORS.teal : "#fff",
+                  border: "none",
+                  borderTopLeftRadius: 4,
+                  borderTopRightRadius: 4,
+                  padding: "9px 16px",
+                  fontSize: 13.5,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                {rotulo}
+              </button>
+            ))}
           </div>
         </div>
       </header>
 
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 24px 64px" }}>
+      <main className="conteudo-app" style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 24px 64px" }}>
         {notificacoes.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
             {notificacoes.map((n) => (
@@ -2150,7 +2192,7 @@ function TelaPrincipal({ session, perfil }) {
             {mensagem && <p style={{ fontSize: 13, color: COLORS.danger, marginBottom: 16 }}>{mensagem}</p>}
             {aviso && <p style={{ fontSize: 13, color: COLORS.teal, marginBottom: 16 }}>{aviso}</p>}
 
-            <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 24 }}>
+            <div className="grid-agenda" style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 24 }}>
               <div>
                 <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
                   {Object.entries(TIPO_AMBIENTE_LABEL_PLURAL).map(([tipo, label]) => (
