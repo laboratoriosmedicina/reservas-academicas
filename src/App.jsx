@@ -265,7 +265,7 @@ function TelaAutenticacao({ avisoInicial }) {
   return (
     <div style={{ minHeight: "100vh", background: FUNDO_ESCURO, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", padding: 24 }}>
       <div style={{ maxWidth: 420, width: "100%", background: "rgba(7,26,33,0.72)", border: "1px solid rgba(31,216,196,0.25)", backdropFilter: "blur(6px)", padding: "34px 32px" }}>
-        <img src="/logo.png" alt="UNIFAMETRO | IDOMED" style={{ height: 72, marginBottom: 22, maxWidth: "100%", objectFit: "contain", objectPosition: "left" }} />
+        <img src="/logo.png" alt="UNIFAMETRO | IDOMED" style={{ height: 104, margin: "-14px 0 -4px", maxWidth: "100%", objectFit: "contain", objectPosition: "left" }} />
         <h1 style={{ ...fonteTitulo, fontSize: 19, marginBottom: 4, color: "#fff" }}>Portal de Reservas Acadêmicas</h1>
         <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.6)", marginBottom: 24 }}>
           {modo === "entrar" ? "Entre com o e-mail e a senha que você definiu pelo convite." : "Informe seu e-mail para receber um link de definição de senha."}
@@ -340,7 +340,7 @@ function TelaDefinirSenha({ onConcluido }) {
   return (
     <div style={{ minHeight: "100vh", background: FUNDO_ESCURO, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", padding: 24 }}>
       <div style={{ maxWidth: 420, width: "100%", background: "rgba(7,26,33,0.72)", border: "1px solid rgba(31,216,196,0.25)", backdropFilter: "blur(6px)", padding: "34px 32px" }}>
-        <img src="/logo.png" alt="UNIFAMETRO | IDOMED" style={{ height: 72, marginBottom: 22, maxWidth: "100%", objectFit: "contain", objectPosition: "left" }} />
+        <img src="/logo.png" alt="UNIFAMETRO | IDOMED" style={{ height: 104, margin: "-14px 0 -4px", maxWidth: "100%", objectFit: "contain", objectPosition: "left" }} />
         <h1 style={{ ...fonteTitulo, fontSize: 19, marginBottom: 4, color: "#fff" }}>Defina sua senha</h1>
         <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.6)", marginBottom: 24 }}>Escolha a senha que você vai usar para entrar no portal.</p>
         <form onSubmit={salvar}>
@@ -2102,7 +2102,7 @@ function TelaPrincipal({ session, perfil }) {
         <div className="conteudo-app" style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 24px 0" }}>
           <div className="cabecalho-topo" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
             <div>
-              <img src="/logo.png" alt="UNIFAMETRO | IDOMED" style={{ height: 46, display: "block" }} />
+              <img src="/logo.png" alt="UNIFAMETRO | IDOMED" style={{ height: 64, display: "block", margin: "-8px 0 -12px" }} />
               <div style={{ fontSize: 11.5, opacity: 0.65, marginTop: 6 }}>Portal de Reservas Acadêmicas</div>
             </div>
             <div className="cabecalho-usuario" style={{ textAlign: "right", fontSize: 13 }}>
